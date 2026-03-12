@@ -13,7 +13,6 @@ const nameInput = document.querySelector("#voter-name");
 const selectedVideo = document.querySelector("#selected-video");
 const changeVoteButton = document.querySelector("#change-vote");
 const voteStatus = document.querySelector("#vote-status");
-const serverStatus = document.querySelector("#server-status");
 const videoGrid = document.querySelector("#video-grid");
 const videoCardTemplate = document.querySelector("#video-card-template");
 const descriptionModal = document.querySelector("#description-modal");
@@ -53,11 +52,12 @@ changeVoteButton.addEventListener("click", () => {
   nameInput.value = state.submittedVote.voterName;
   selectedVideo.value = state.submittedVote.videoId || "";
   enableForm();
-  employeeNumberInput.disabled = true;
+  employeeNumberInput.disabled = false;
+  employeeNumberInput.readOnly = false;
   nameInput.disabled = true;
   nameInput.readOnly = true;
   changeVoteButton.hidden = true;
-  setStatus("선택한 영상을 변경한 뒤 다시 제출해 주세요.");
+  setStatus("사원번호를 수정하거나 영상을 다시 선택한 뒤 제출해 주세요.");
 });
 
 modalCloseButton.addEventListener("click", closeDescriptionModal);
@@ -74,7 +74,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 async function initialize() {
-  setServerStatus("투표 서버에 연결 중입니다...");
   nameInput.readOnly = true;
 
   try {
@@ -97,7 +96,6 @@ async function initialize() {
     renderVideoCards();
     renderStatus();
     toggleFormByVotingState();
-    setServerStatus("투표 서버 연결 완료. 출품 영상을 확인하고 투표해 주세요.", "online");
 
     if (state.submittedVote) {
       employeeNumberInput.value = state.submittedVote.employeeNumber;
@@ -109,8 +107,7 @@ async function initialize() {
       };
     }
   } catch (error) {
-    setServerStatus("서버에 연결하지 못했습니다. 잠시 뒤 다시 접속해 주세요.", "offline");
-    setStatus("지금은 투표를 진행할 수 없습니다. 서버 상태를 확인해 주세요.", "warning");
+    setStatus("지금은 투표를 진행할 수 없습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
   }
 }
 
@@ -140,14 +137,12 @@ async function handleEmployeeNumberInput() {
 
     if (!response.ok) {
       setStatus(result.message || "등록된 사원번호만 투표할 수 있습니다.", "warning");
-      toggleFormByVotingState();
       return;
     }
 
     state.employeeLookup = result;
     nameInput.value = result.voterName;
-    setStatus("정보를 확인한 뒤, 가장 마음에 드는 영상 한 편에 투표해 주세요.");
-    toggleFormByVotingState();
+    setStatus("정보를 입력한 뒤, 가장 마음에 드는 영상 한 편에 투표해 주세요.");
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return;
@@ -166,7 +161,7 @@ async function submitVote() {
   }
 
   if (state.submittedVote && !state.isEditingVote) {
-    setStatus("이 브라우저에서는 이미 투표를 완료했습니다. 변경하려면 아래 버튼을 눌러 주세요.", "warning");
+    setStatus("이미 투표를 완료했습니다. 변경하려면 아래 버튼을 눌러 주세요.", "warning");
     return;
   }
 
@@ -286,14 +281,12 @@ function renderVideoCards() {
     const topline = card.querySelector(".video-card__topline");
     const title = card.querySelector("h3");
     const description = card.querySelector(".video-card__description");
-    const team = card.querySelector(".video-card__team");
     const link = card.querySelector("a");
     const moreButton = card.querySelector(".video-card__more");
 
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
     title.textContent = video.title;
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");
-    team.textContent = video.submitter || "-";
     link.href = video.url;
     moreButton.addEventListener("click", () => openDescriptionModal(video));
 
@@ -351,7 +344,7 @@ function summarizeDescription(text) {
 
 function openDescriptionModal(video) {
   modalTitle.textContent = video.title;
-  modalSubmitter.textContent = `제출자 ${video.submitter || "-"}`;
+  modalSubmitter.textContent = "";
   modalDescription.textContent = video.description || "상세 설명이 없습니다.";
   descriptionModal.hidden = false;
   document.body.style.overflow = "hidden";
@@ -393,6 +386,8 @@ function enableForm() {
   Array.from(form.elements).forEach((element) => {
     element.disabled = false;
   });
+  employeeNumberInput.disabled = false;
+  employeeNumberInput.readOnly = false;
   nameInput.readOnly = true;
 }
 
@@ -424,19 +419,6 @@ function setStatus(message, tone = "") {
 
   if (tone === "warning") {
     voteStatus.classList.add("is-warning");
-  }
-}
-
-function setServerStatus(message, tone = "") {
-  serverStatus.textContent = message;
-  serverStatus.className = "server-status";
-
-  if (tone === "online") {
-    serverStatus.classList.add("is-online");
-  }
-
-  if (tone === "offline") {
-    serverStatus.classList.add("is-offline");
   }
 }
 

@@ -406,14 +406,8 @@ a {
 .video-card__footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.video-card__team {
-  color: #67727e;
-  font-size: 0.9rem;
-  font-weight: 600;
 }
 
 .video-card__actions {
