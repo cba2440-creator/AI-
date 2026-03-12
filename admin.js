@@ -51,7 +51,7 @@ authForm.addEventListener("submit", async (event) => {
   }
 
   showToast("인증되었습니다.");
-  await loadDashboard(true);
+  await loadDashboard();
 });
 
 videoForm.addEventListener("submit", async (event) => {
@@ -74,9 +74,8 @@ videoForm.addEventListener("submit", async (event) => {
   }
 
   const method = videoIdInput.value ? "PUT" : "POST";
-  const path = videoIdInput.value ? `${API_BASE}/videos/${videoIdInput.value}` : `${API_BASE}/videos`;
-
-  const response = await adminFetch(path, {
+  const endpoint = videoIdInput.value ? `${API_BASE}/videos/${videoIdInput.value}` : `${API_BASE}/videos`;
+  const response = await adminFetch(endpoint, {
     method,
     headers: {
       "Content-Type": "application/json"
@@ -84,20 +83,20 @@ videoForm.addEventListener("submit", async (event) => {
     body: JSON.stringify(payload)
   });
 
+  const result = await response.json();
   if (!response.ok) {
-    const result = await response.json();
     setAuthStatus(result.message || "영상 저장에 실패했습니다.", "warning");
     return;
   }
 
   clearVideoForm();
-  setAuthStatus("영상 정보가 저장되었습니다.", "success");
+  setAuthStatus(result.message || "영상이 저장되었습니다.", "success");
   await loadDashboard();
 });
 
 videoFormResetButton.addEventListener("click", () => {
   clearVideoForm();
-  setAuthStatus("입력 폼을 초기화했습니다.");
+  setAuthStatus("입력 내용이 초기화되었습니다.");
 });
 
 resetVotesButton.addEventListener("click", async () => {
@@ -118,17 +117,17 @@ resetVotesButton.addEventListener("click", async () => {
   const response = await fetch(`${API_BASE}/reset-votes`, {
     method: "POST",
     headers: {
-      "x-admin-password": secondPassword.trim()
+      "x-admin-password": secondPassword
     }
   });
 
+  const result = await response.json();
   if (!response.ok) {
-    const result = await response.json();
     setAuthStatus(result.message || "투표 초기화에 실패했습니다.", "warning");
     return;
   }
 
-  setAuthStatus("전체 투표가 초기화되었습니다.", "success");
+  setAuthStatus(result.message, "success");
   showToast("초기화 완료되었습니다.");
   await loadDashboard();
 });
@@ -147,16 +146,19 @@ passwordModalConfirm.addEventListener("click", () => closePasswordModal(password
 confirmModalClose.addEventListener("click", () => closeConfirmModal(false));
 confirmModalCancel.addEventListener("click", () => closeConfirmModal(false));
 confirmModalConfirm.addEventListener("click", () => closeConfirmModal(true));
+
 passwordModal.addEventListener("click", (event) => {
   if (event.target instanceof HTMLElement && event.target.dataset.closePasswordModal === "true") {
     closePasswordModal(null);
   }
 });
+
 confirmModal.addEventListener("click", (event) => {
   if (event.target instanceof HTMLElement && event.target.dataset.closeConfirmModal === "true") {
     closeConfirmModal(false);
   }
 });
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !passwordModal.hidden) {
     closePasswordModal(null);
@@ -195,22 +197,20 @@ async function loadDashboard() {
 }
 
 function renderVideoList(videos) {
-  adminVideoList.innerHTML = videos.map((video) => {
-    return `
-      <article class="admin-video-card">
-        <div>
-          <strong>${video.title}</strong>
-          <div class="admin-video-card__meta">${video.submitter}</div>
-          <div class="admin-video-card__meta">${video.description}</div>
-          <div class="admin-video-card__link">${video.url}</div>
-        </div>
-        <div class="admin-video-card__actions">
-          <button class="button button--ghost" type="button" data-action="edit" data-id="${video.id}">수정</button>
-          <button class="button button--ghost" type="button" data-action="delete" data-id="${video.id}">삭제</button>
-        </div>
-      </article>
-    `;
-  }).join("");
+  adminVideoList.innerHTML = videos.map((video) => `
+    <article class="admin-video-card">
+      <div>
+        <strong>${escapeHtml(video.title)}</strong>
+        <div class="admin-video-card__meta">${escapeHtml(video.submitter)}</div>
+        <div class="admin-video-card__meta">${escapeHtml(video.description)}</div>
+        <div class="admin-video-card__link">${escapeHtml(video.url)}</div>
+      </div>
+      <div class="admin-video-card__actions">
+        <button class="button button--ghost" type="button" data-action="edit" data-id="${escapeHtml(video.id)}">수정</button>
+        <button class="button button--ghost" type="button" data-action="delete" data-id="${escapeHtml(video.id)}">삭제</button>
+      </div>
+    </article>
+  `).join("");
 
   adminVideoList.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -227,15 +227,15 @@ function renderVideoList(videos) {
 }
 
 function renderResults(results, videos) {
-  const totalVotes = results.totalVotes || 0;
+  const totalSelections = results.totalSelections || 0;
 
   adminResults.innerHTML = videos.map((video) => {
     const count = results.voteCounts[video.id] || 0;
-    const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+    const percentage = totalSelections > 0 ? Math.round((count / totalSelections) * 100) : 0;
     return `
       <div class="result-item">
         <div class="result-item__header">
-          <div class="result-item__title">${video.title}</div>
+          <div class="result-item__title">${escapeHtml(video.title)}</div>
           <div class="result-item__count">${count}표 · ${percentage}%</div>
         </div>
         <div class="result-item__bar">
@@ -253,14 +253,32 @@ function renderVoteLog(votes, videos) {
   }
 
   adminVoteLog.innerHTML = votes.map((vote) => {
-    const video = videos.find((item) => item.id === vote.videoId);
+    const selectedTitles = normalizeVoteVideoIds(vote)
+      .map((videoId) => {
+        const found = videos.find((video) => video.id === videoId);
+        return found ? found.title : videoId;
+      })
+      .join(", ");
+
     return `
       <div class="admin-vote-item">
-        <strong>${vote.employeeNumber}</strong> · ${vote.voterName}
-        <div class="admin-vote-item__meta">선택 작품: ${video ? video.title : vote.videoId} · ${new Date(vote.submittedAt).toLocaleString("ko-KR")}</div>
+        <strong>${escapeHtml(vote.employeeNumber)}</strong> · ${escapeHtml(vote.voterName)}
+        <div class="admin-vote-item__meta">선택 작품: ${escapeHtml(selectedTitles)} · ${new Date(vote.submittedAt).toLocaleString("ko-KR")}</div>
       </div>
     `;
   }).join("");
+}
+
+function normalizeVoteVideoIds(vote) {
+  if (Array.isArray(vote.videoIds)) {
+    return vote.videoIds;
+  }
+
+  if (vote.videoId) {
+    return [vote.videoId];
+  }
+
+  return [];
 }
 
 function populateVideoForm(video) {
@@ -281,7 +299,7 @@ async function deleteVideo(id) {
     return;
   }
 
-  const confirmed = await requestConfirmation("이 영상을 삭제하시겠습니까? 해당 영상에 대한 기존 투표도 함께 제거됩니다.");
+  const confirmed = await requestConfirmation("이 영상을 삭제하시겠습니까? 관련 투표도 함께 제거됩니다.");
   if (!confirmed) {
     return;
   }
@@ -289,15 +307,15 @@ async function deleteVideo(id) {
   const response = await adminFetch(`${API_BASE}/videos/${id}`, {
     method: "DELETE"
   });
+  const result = await response.json();
 
   if (!response.ok) {
-    const result = await response.json();
     setAuthStatus(result.message || "영상 삭제에 실패했습니다.", "warning");
     return;
   }
 
   clearVideoForm();
-  setAuthStatus("영상이 삭제되었습니다.", "success");
+  setAuthStatus(result.message, "success");
   await loadDashboard();
 }
 
@@ -321,7 +339,7 @@ function ensurePassword() {
     return true;
   }
 
-  setAuthStatus("설정한 관리자 비밀번호로 먼저 인증해 주세요.", "warning");
+  setAuthStatus("먼저 관리자 비밀번호로 인증해 주세요.", "warning");
   return false;
 }
 
@@ -339,6 +357,7 @@ async function authenticateAdmin() {
 
 async function handleAuthFailure(response) {
   let message = "관리자 비밀번호가 올바르지 않습니다.";
+
   try {
     const result = await response.json();
     message = result.message || message;
@@ -385,9 +404,9 @@ async function updateVotingState(endpoint, successMessage) {
       "x-admin-password": secondPassword.trim()
     }
   });
+  const result = await response.json();
 
   if (!response.ok) {
-    const result = await response.json();
     setAuthStatus(result.message || "상태 변경에 실패했습니다.", "warning");
     return;
   }
@@ -449,4 +468,13 @@ function setAuthStatus(message, tone = "") {
   if (tone === "warning") {
     authStatus.classList.add("is-warning");
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

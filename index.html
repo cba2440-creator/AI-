@@ -48,8 +48,8 @@
 
         <section class="panel panel--form panel--form-sticky">
           <div class="panel__heading">
-            <h2>정보 입력</h2>
-            <p>사원번호를 입력하면 이름이 자동으로 확인됩니다.</p>
+            <h2>투표 진행</h2>
+            <p>사원번호를 입력하면 이름이 자동으로 확인되며, 1인 최소 1개에서 최대 3개 작품까지 최초 1회만 투표할 수 있습니다.</p>
           </div>
 
           <form id="vote-form" class="vote-form">
@@ -64,14 +64,11 @@
             </label>
 
             <label>
-              <span>선택한 영상</span>
-              <select id="selected-video" name="selectedVideo" required>
-                <option value="">투표할 영상을 선택해 주세요</option>
-              </select>
+              <span>투표 작품 선택</span>
+              <div id="selected-video" class="vote-checkboxes" role="group" aria-label="투표 작품 선택"></div>
             </label>
 
             <button type="submit" class="button button--primary">투표 제출</button>
-            <button id="change-vote" type="button" class="button button--ghost" hidden>투표 변경</button>
           </form>
 
           <div id="vote-status" class="status-card" aria-live="polite"></div>

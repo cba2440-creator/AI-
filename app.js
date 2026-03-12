@@ -11,7 +11,6 @@ const form = document.querySelector("#vote-form");
 const employeeNumberInput = document.querySelector("#employee-number");
 const nameInput = document.querySelector("#voter-name");
 const selectedVideo = document.querySelector("#selected-video");
-const changeVoteButton = document.querySelector("#change-vote");
 const voteStatus = document.querySelector("#vote-status");
 const videoGrid = document.querySelector("#video-grid");
 const videoCardTemplate = document.querySelector("#video-card-template");
@@ -23,7 +22,6 @@ const modalDescription = document.querySelector("#modal-description");
 
 const state = {
   submittedVote: loadSubmittedVote(),
-  isEditingVote: false,
   employeeLookup: null
 };
 
@@ -38,26 +36,8 @@ employeeNumberInput.addEventListener("input", () => {
   handleEmployeeNumberInput();
 });
 
-changeVoteButton.addEventListener("click", () => {
-  if (!state.submittedVote || votingClosed) {
-    return;
-  }
-
-  state.isEditingVote = true;
-  state.employeeLookup = {
-    employeeNumber: state.submittedVote.employeeNumber,
-    voterName: state.submittedVote.voterName
-  };
-  employeeNumberInput.value = state.submittedVote.employeeNumber;
-  nameInput.value = state.submittedVote.voterName;
-  selectedVideo.value = state.submittedVote.videoId || "";
-  enableForm();
-  employeeNumberInput.disabled = false;
-  employeeNumberInput.readOnly = false;
-  nameInput.disabled = true;
-  nameInput.readOnly = true;
-  changeVoteButton.hidden = true;
-  setStatus("사원번호를 수정하거나 영상을 다시 선택한 뒤 제출해 주세요.");
+selectedVideo.addEventListener("change", () => {
+  enforceVoteSelectionLimit();
 });
 
 modalCloseButton.addEventListener("click", closeDescriptionModal);
@@ -92,7 +72,7 @@ async function initialize() {
     votingClosed = Boolean(meta.votingClosed);
     syncStoredVoteWithResetVersion();
 
-    renderSelectOptions();
+    renderVoteOptions();
     renderVideoCards();
     renderStatus();
     toggleFormByVotingState();
@@ -100,11 +80,11 @@ async function initialize() {
     if (state.submittedVote) {
       employeeNumberInput.value = state.submittedVote.employeeNumber;
       nameInput.value = state.submittedVote.voterName;
-      selectedVideo.value = state.submittedVote.videoId;
       state.employeeLookup = {
         employeeNumber: state.submittedVote.employeeNumber,
         voterName: state.submittedVote.voterName
       };
+      applySelectedVideoIds(state.submittedVote.videoIds || []);
     }
   } catch (error) {
     setStatus("지금은 투표를 진행할 수 없습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
@@ -112,7 +92,7 @@ async function initialize() {
 }
 
 async function handleEmployeeNumberInput() {
-  if (state.submittedVote && !state.isEditingVote) {
+  if (state.submittedVote) {
     return;
   }
 
@@ -142,7 +122,7 @@ async function handleEmployeeNumberInput() {
 
     state.employeeLookup = result;
     nameInput.value = result.voterName;
-    setStatus("정보를 입력한 뒤, 가장 마음에 드는 영상 한 편에 투표해 주세요.");
+    setStatus("1개에서 최대 3개 작품까지 선택한 뒤 투표를 제출해 주세요.");
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return;
@@ -160,8 +140,8 @@ async function submitVote() {
     return;
   }
 
-  if (state.submittedVote && !state.isEditingVote) {
-    setStatus("이미 투표를 완료했습니다. 변경하려면 아래 버튼을 눌러 주세요.", "warning");
+  if (state.submittedVote) {
+    setStatus("최초 투표 완료 후에는 변경하거나 다시 투표할 수 없습니다.", "warning");
     return;
   }
 
@@ -172,10 +152,10 @@ async function submitVote() {
   }
 
   const employeeNumber = employeeNumberInput.value.trim();
-  const videoId = selectedVideo.value;
+  const videoIds = getSelectedVideoIds();
 
-  if (!employeeNumber || !videoId) {
-    setStatus("사원번호를 입력하고 영상을 선택해 주세요.", "warning");
+  if (!employeeNumber) {
+    setStatus("사원번호를 입력해 주세요.", "warning");
     return;
   }
 
@@ -184,15 +164,20 @@ async function submitVote() {
     return;
   }
 
+  if (videoIds.length < 1 || videoIds.length > 3) {
+    setStatus("투표 작품은 최소 1개에서 최대 3개까지 선택할 수 있습니다.", "warning");
+    return;
+  }
+
   try {
     const response = await fetch(`${API_BASE}/vote`, {
-      method: state.isEditingVote ? "PUT" : "POST",
+      method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
         employeeNumber,
-        videoId
+        videoIds
       })
     });
 
@@ -205,7 +190,7 @@ async function submitVote() {
     state.submittedVote = {
       employeeNumber,
       voterName: result.voterName || nameInput.value,
-      videoId,
+      videoIds,
       submittedAt: result.submittedAt,
       resetVersion
     };
@@ -213,17 +198,53 @@ async function submitVote() {
       employeeNumber,
       voterName: state.submittedVote.voterName
     };
-    state.isEditingVote = false;
 
     saveSubmittedVote();
     employeeNumberInput.value = state.submittedVote.employeeNumber;
     nameInput.value = state.submittedVote.voterName;
-    selectedVideo.value = state.submittedVote.videoId;
+    applySelectedVideoIds(videoIds);
     renderStatus();
     toggleFormByVotingState();
   } catch (error) {
     setStatus("서버 통신 중 문제가 발생했습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
   }
+}
+
+function renderVoteOptions() {
+  selectedVideo.innerHTML = videos.map((video, index) => {
+    return `
+      <label class="vote-checkbox">
+        <input type="checkbox" name="videoIds" value="${escapeHtml(video.id)}">
+        <span class="vote-checkbox__text">${escapeHtml(`Entry ${String(index + 1).padStart(2, "0")} · ${video.title}`)}</span>
+      </label>
+    `;
+  }).join("");
+}
+
+function enforceVoteSelectionLimit() {
+  const checked = getCheckedInputs();
+  if (checked.length <= 3) {
+    return;
+  }
+
+  const lastChecked = checked[checked.length - 1];
+  lastChecked.checked = false;
+  setStatus("최대 3개 작품까지만 선택할 수 있습니다.", "warning");
+}
+
+function getCheckedInputs() {
+  return Array.from(selectedVideo.querySelectorAll('input[type="checkbox"]:checked'));
+}
+
+function getSelectedVideoIds() {
+  return getCheckedInputs().map((input) => input.value);
+}
+
+function applySelectedVideoIds(videoIds) {
+  const selected = new Set(videoIds);
+  selectedVideo.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
 }
 
 function loadSubmittedVote() {
@@ -245,7 +266,6 @@ function syncStoredVoteWithResetVersion() {
 
   if (state.submittedVote.resetVersion !== resetVersion) {
     state.submittedVote = null;
-    state.isEditingVote = false;
     state.employeeLookup = null;
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -262,14 +282,6 @@ async function refreshMeta() {
   votingClosed = Boolean(meta.votingClosed);
   syncStoredVoteWithResetVersion();
   toggleFormByVotingState();
-}
-
-function renderSelectOptions() {
-  selectedVideo.innerHTML = '<option value="">투표할 영상을 선택해 주세요</option>';
-  selectedVideo.insertAdjacentHTML(
-    "beforeend",
-    videos.map((video) => `<option value="${escapeHtml(video.id)}">${escapeHtml(video.title)}</option>`).join("")
-  );
 }
 
 function renderVideoCards() {
@@ -357,9 +369,11 @@ function closeDescriptionModal() {
 
 function renderStatus() {
   if (state.submittedVote) {
-    const votedVideo = videos.find((video) => video.id === state.submittedVote.videoId);
+    const selectedTitles = videos
+      .filter((video) => (state.submittedVote.videoIds || []).includes(video.id))
+      .map((video) => video.title);
     setStatus(
-      `${state.submittedVote.voterName}님 투표가 저장되었습니다. 선택 작품: ${votedVideo ? votedVideo.title : "-"}`,
+      `${state.submittedVote.voterName}님 투표가 저장되었습니다. 선택 작품: ${selectedTitles.join(", ")}`,
       "success"
     );
     return;
@@ -370,14 +384,12 @@ function renderStatus() {
     return;
   }
 
-  setStatus("정보를 입력한 뒤, 가장 마음에 드는 영상 한 편에 투표해 주세요.");
+  setStatus("1개에서 최대 3개 작품까지 선택한 뒤 최초 1회만 투표할 수 있습니다.");
 }
 
 function disableForm() {
   Array.from(form.elements).forEach((element) => {
-    if (element !== changeVoteButton) {
-      element.disabled = true;
-    }
+    element.disabled = true;
   });
   nameInput.readOnly = true;
 }
@@ -388,25 +400,17 @@ function enableForm() {
   });
   employeeNumberInput.disabled = false;
   employeeNumberInput.readOnly = false;
+  nameInput.disabled = true;
   nameInput.readOnly = true;
 }
 
 function toggleFormByVotingState() {
-  if (state.submittedVote && !state.isEditingVote) {
+  if (state.submittedVote || votingClosed) {
     disableForm();
-    changeVoteButton.hidden = false;
-    return;
-  }
-
-  if (votingClosed) {
-    disableForm();
-    changeVoteButton.hidden = true;
     return;
   }
 
   enableForm();
-  nameInput.disabled = true;
-  changeVoteButton.hidden = true;
 }
 
 function setStatus(message, tone = "") {

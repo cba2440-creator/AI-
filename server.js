@@ -37,16 +37,12 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, readJson(STATE_PATH));
   }
 
-  if (pathname === "/healthz" && request.method === "GET") {
-    return sendJson(response, 200, { ok: true });
+  if (pathname === "/api/results" && request.method === "GET") {
+    return sendJson(response, 200, buildResults());
   }
 
   if (pathname === "/api/eligible-voter" && request.method === "GET") {
     return handleEligibleVoterLookup(response, requestUrl.searchParams);
-  }
-
-  if (pathname === "/api/results" && request.method === "GET") {
-    return sendJson(response, 200, buildResults());
   }
 
   if (pathname === "/api/vote" && request.method === "POST") {
@@ -54,7 +50,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (pathname === "/api/vote" && request.method === "PUT") {
-    return handleVoteUpdate(request, response);
+    return sendJson(response, 405, { message: "투표 변경은 지원하지 않습니다." });
   }
 
   if (pathname === "/api/admin/dashboard" && request.method === "GET") {
@@ -137,6 +133,10 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, { message: "마감 해제되었습니다." });
   }
 
+  if (pathname === "/healthz" && request.method === "GET") {
+    return sendJson(response, 200, { ok: true });
+  }
+
   return serveStatic(pathname, response);
 });
 
@@ -194,6 +194,7 @@ function defaultVideos() {
 
 function handleEligibleVoterLookup(response, searchParams) {
   const employeeNumber = sanitizeText(searchParams.get("employeeNumber"));
+
   if (!employeeNumber) {
     return sendJson(response, 400, { message: "사원번호를 입력해 주세요." });
   }
@@ -214,14 +215,20 @@ function buildResults() {
     return accumulator;
   }, {});
 
+  let totalSelections = 0;
+
   votes.forEach((vote) => {
-    if (voteCounts[vote.videoId] !== undefined) {
-      voteCounts[vote.videoId] += 1;
+    for (const videoId of normalizeVoteVideoIds(vote)) {
+      if (voteCounts[videoId] !== undefined) {
+        voteCounts[videoId] += 1;
+        totalSelections += 1;
+      }
     }
   });
 
   return {
     totalVotes: votes.length,
+    totalSelections,
     voteCounts
   };
 }
@@ -230,14 +237,16 @@ async function handleVote(request, response) {
   try {
     const payload = JSON.parse((await readRequestBody(request)) || "{}");
     const employeeNumber = sanitizeText(payload.employeeNumber);
-    const videoId = sanitizeText(payload.videoId);
+    const videoIds = Array.isArray(payload.videoIds)
+      ? [...new Set(payload.videoIds.map((value) => sanitizeText(value)).filter(Boolean))]
+      : [];
     const state = readJson(STATE_PATH);
     const videos = readJson(VIDEOS_PATH);
     const votes = readJson(VOTES_PATH);
     const employee = findEmployee(employeeNumber);
 
-    if (!employeeNumber || !videoId) {
-      return sendJson(response, 400, { message: "사원번호와 영상을 선택해 주세요." });
+    if (!employeeNumber || videoIds.length < 1 || videoIds.length > 3) {
+      return sendJson(response, 400, { message: "사원번호와 1개에서 3개 사이의 작품을 선택해 주세요." });
     }
 
     if (!employee) {
@@ -248,18 +257,18 @@ async function handleVote(request, response) {
       return sendJson(response, 403, { message: "투표가 마감되어 더 이상 참여할 수 없습니다." });
     }
 
-    if (!videos.some((video) => video.id === videoId)) {
-      return sendJson(response, 400, { message: "선택한 영상 정보가 올바르지 않습니다." });
+    if (!videoIds.every((videoId) => videos.some((video) => video.id === videoId))) {
+      return sendJson(response, 400, { message: "선택한 작품 정보가 올바르지 않습니다." });
     }
 
     if (votes.some((vote) => vote.employeeNumber === employeeNumber)) {
-      return sendJson(response, 409, { message: "해당 사원번호는 이미 투표를 완료했습니다." });
+      return sendJson(response, 409, { message: "최초 투표 완료 후에는 변경하거나 다시 투표할 수 없습니다." });
     }
 
     const newVote = {
       employeeNumber,
       voterName: employee.voterName,
-      videoId,
+      videoIds,
       submittedAt: new Date().toISOString()
     };
 
@@ -276,59 +285,11 @@ async function handleVote(request, response) {
   }
 }
 
-async function handleVoteUpdate(request, response) {
-  try {
-    const payload = JSON.parse((await readRequestBody(request)) || "{}");
-    const employeeNumber = sanitizeText(payload.employeeNumber);
-    const videoId = sanitizeText(payload.videoId);
-    const state = readJson(STATE_PATH);
-    const videos = readJson(VIDEOS_PATH);
-    const votes = readJson(VOTES_PATH);
-    const employee = findEmployee(employeeNumber);
-
-    if (!employeeNumber || !videoId) {
-      return sendJson(response, 400, { message: "사원번호와 영상을 선택해 주세요." });
-    }
-
-    if (!employee) {
-      return sendJson(response, 403, { message: "등록된 사원번호만 투표할 수 있습니다." });
-    }
-
-    if (state.votingClosed) {
-      return sendJson(response, 403, { message: "투표가 마감되어 더 이상 참여할 수 없습니다." });
-    }
-
-    if (!videos.some((video) => video.id === videoId)) {
-      return sendJson(response, 400, { message: "선택한 영상 정보가 올바르지 않습니다." });
-    }
-
-    const voteIndex = votes.findIndex((vote) => vote.employeeNumber === employeeNumber);
-    if (voteIndex < 0) {
-      return sendJson(response, 404, { message: "기존 투표 정보를 찾지 못했습니다." });
-    }
-
-    votes[voteIndex] = {
-      ...votes[voteIndex],
-      voterName: employee.voterName,
-      videoId,
-      submittedAt: new Date().toISOString()
-    };
-    writeJson(VOTES_PATH, votes);
-
-    return sendJson(response, 200, {
-      message: "투표가 변경되었습니다.",
-      voterName: votes[voteIndex].voterName,
-      submittedAt: votes[voteIndex].submittedAt
-    });
-  } catch (error) {
-    return sendJson(response, 500, { message: "서버에서 투표 변경을 처리하지 못했습니다." });
-  }
-}
-
 async function handleVideoCreate(request, response) {
   try {
     const videos = readJson(VIDEOS_PATH);
     const payload = normalizeVideoPayload(JSON.parse((await readRequestBody(request)) || "{}"));
+
     if (!payload) {
       return sendJson(response, 400, { message: "영상 정보를 모두 올바르게 입력해 주세요." });
     }
@@ -345,6 +306,7 @@ async function handleVideoUpdate(request, response, id) {
   try {
     const videos = readJson(VIDEOS_PATH);
     const payload = normalizeVideoPayload(JSON.parse((await readRequestBody(request)) || "{}"));
+
     if (!payload) {
       return sendJson(response, 400, { message: "영상 정보를 모두 올바르게 입력해 주세요." });
     }
@@ -372,7 +334,10 @@ function handleVideoDelete(response, id) {
   }
 
   writeJson(VIDEOS_PATH, nextVideos);
-  writeJson(VOTES_PATH, votes.filter((vote) => vote.videoId !== id));
+  writeJson(
+    VOTES_PATH,
+    votes.filter((vote) => !normalizeVoteVideoIds(vote).includes(id))
+  );
   return sendJson(response, 200, { message: "영상과 관련 투표가 삭제되었습니다." });
 }
 
@@ -431,6 +396,18 @@ function serveStatic(pathname, response) {
     });
     response.end(content);
   });
+}
+
+function normalizeVoteVideoIds(vote) {
+  if (Array.isArray(vote.videoIds)) {
+    return vote.videoIds;
+  }
+
+  if (vote.videoId) {
+    return [vote.videoId];
+  }
+
+  return [];
 }
 
 function findEmployee(employeeNumber) {

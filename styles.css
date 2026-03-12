@@ -221,6 +221,34 @@ a {
   resize: vertical;
 }
 
+.vote-checkboxes {
+  display: grid;
+  gap: 10px;
+}
+
+.vote-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid #d6dee7;
+  border-radius: 14px;
+  background: #f9fbfd;
+}
+
+.vote-checkbox input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.vote-checkbox__text {
+  color: #15202b;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
