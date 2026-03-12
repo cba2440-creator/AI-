@@ -1,0 +1,17 @@
+{
+  "name": "ai-promotion-awards-voting",
+  "version": "1.0.0",
+  "private": true,
+  "description": "사내 AI 홍보 영상 투표 사이트",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "node tunnel-runner.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "localtunnel": "^2.0.2"
+  }
+}

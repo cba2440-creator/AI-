@@ -1,0 +1,34 @@
+[
+  {
+    "id": "vision-story",
+    "title": "01. AI로 바뀌는 우리의 하루",
+    "submitter": "김선빈",
+    "description": "AI가 만드는 새로운 업무 환경을 소개하는 영상입니다.",
+    "type": "youtube",
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  },
+  {
+    "id": "work-smarter",
+    "title": "02. AI 선글라스",
+    "submitter": "이재민",
+    "description": "메타의 최신 선글라스를 소개합니다.",
+    "type": "youtube",
+    "url": "https://www.youtube.com/watch?v=LgRp9isEuSo"
+  },
+  {
+    "id": "test",
+    "title": "03. POS 매뉴얼",
+    "submitter": "전재천",
+    "description": "POS 사용 방법을 안내하는 영상입니다.",
+    "type": "youtube",
+    "url": "https://youtu.be/qqCksuMTHXY"
+  },
+  {
+    "id": "04-ai-이세돌",
+    "title": "04. AI 이세돌",
+    "submitter": "이세돌",
+    "description": "AI 관련 영상입니다.",
+    "type": "youtube",
+    "url": "https://www.youtube.com/watch?v=sK5WVys3n7k"
+  }
+]

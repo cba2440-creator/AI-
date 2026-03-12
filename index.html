@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 홍보 영상 어워드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="employee-page">
+  <div id="description-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close-modal="true"></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button id="modal-close" class="modal__close" type="button" aria-label="닫기">×</button>
+      <div class="modal__eyebrow">출품작 상세 설명</div>
+      <h2 id="modal-title" class="modal__title"></h2>
+      <p id="modal-submitter" class="modal__submitter"></p>
+      <div id="modal-description" class="modal__description"></div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <header class="hero hero--employee">
+      <nav class="topbar">
+        <img class="brandmark" src="logo.png" alt="IPARK MALL 로고">
+      </nav>
+    </header>
+
+    <main class="layout layout--employee">
+      <aside class="sidebar">
+        <section class="intro-block">
+          <div class="hero__badge hero__badge--light">AI PROMOTION AWARDS 2026</div>
+          <h1>AI 홍보 영상 어워드</h1>
+          <p class="hero__text">직원들이 만든 영상을 보고 가장 인상 깊은 한 편을 투표해주세요.</p>
+          <div class="hero__meta hero__meta--light">
+            <div>
+              <span class="meta__label">투표 대상</span>
+              <strong>전 직원</strong>
+            </div>
+            <div>
+              <span class="meta__label">투표 방식</span>
+              <strong>1인 1표</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--form panel--form-sticky">
+          <div class="panel__heading">
+            <h2>정보 입력</h2>
+            <p>사원번호를 입력하면 이름이 자동으로 확인됩니다.</p>
+          </div>
+
+          <form id="vote-form" class="vote-form">
+            <label>
+              <span>사원번호</span>
+              <input id="employee-number" name="employeeNumber" type="text" placeholder="" autocomplete="off" required>
+            </label>
+
+            <label>
+              <span>이름</span>
+              <input id="voter-name" name="voterName" type="text" placeholder="" readonly>
+            </label>
+
+            <label>
+              <span>선택한 영상</span>
+              <select id="selected-video" name="selectedVideo" required>
+                <option value="">투표할 영상을 선택해 주세요</option>
+              </select>
+            </label>
+
+            <button type="submit" class="button button--primary">투표 제출</button>
+            <button id="change-vote" type="button" class="button button--ghost" hidden>투표 변경</button>
+          </form>
+
+          <div id="server-status" class="server-status" aria-live="polite"></div>
+          <div id="vote-status" class="status-card" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <section class="content-rail">
+        <section class="shelf">
+          <div class="shelf__header">
+            <div>
+              <h2>출품 영상</h2>
+              <p>올해 사내 AI 홍보 영상 출품작입니다.</p>
+            </div>
+          </div>
+          <div id="video-grid" class="video-grid video-grid--shelf"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <template id="video-card-template">
+    <article class="video-card">
+      <div class="video-card__media"></div>
+      <div class="video-card__body">
+        <div class="video-card__topline"></div>
+        <h3></h3>
+        <p class="video-card__description"></p>
+        <div class="video-card__footer">
+          <div class="video-card__team"></div>
+          <div class="video-card__actions">
+            <button class="button button--ghost button--small video-card__more" type="button">더보기</button>
+            <a class="button button--small" target="_blank" rel="noreferrer">유튜브로 보기</a>
+          </div>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

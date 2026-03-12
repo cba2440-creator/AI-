@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 홍보 영상 어워드 관리자</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="admin-page">
+  <div id="admin-toast" class="admin-toast" aria-live="polite"></div>
+
+  <div id="password-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close-password-modal="true"></div>
+    <div class="modal__dialog modal__dialog--small" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+      <button id="password-modal-close" class="modal__close" type="button" aria-label="닫기">×</button>
+      <div class="modal__eyebrow">관리자 확인</div>
+      <h2 id="password-modal-title" class="modal__title">관리자 비밀번호 입력</h2>
+      <label class="vote-form">
+        <span>비밀번호</span>
+        <input id="password-modal-input" type="password" autocomplete="off">
+      </label>
+      <div class="modal__actions">
+        <button id="password-modal-cancel" class="button button--ghost" type="button">취소</button>
+        <button id="password-modal-confirm" class="button button--primary" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close-confirm-modal="true"></div>
+    <div class="modal__dialog modal__dialog--small" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <button id="confirm-modal-close" class="modal__close" type="button" aria-label="닫기">×</button>
+      <div class="modal__eyebrow">관리자 확인</div>
+      <h2 id="confirm-modal-title" class="modal__title">작업 확인</h2>
+      <p id="confirm-modal-message" class="modal__description"></p>
+      <div class="modal__actions">
+        <button id="confirm-modal-cancel" class="button button--ghost" type="button">취소</button>
+        <button id="confirm-modal-confirm" class="button button--primary" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <header class="hero hero--admin">
+      <nav class="topbar">
+        <img class="brandmark" src="logo.png" alt="IPARK MALL 로고">
+      </nav>
+      <div class="hero__content">
+        <div class="hero__copy">
+          <div class="hero__badge hero__badge--light">ADMIN CONSOLE</div>
+          <h1>AI 홍보 영상 어워드 관리자</h1>
+          <p class="hero__text">영상 등록, 출품작 수정, 투표 현황 확인과 투표 운영을 이 화면에서 관리할 수 있습니다.</p>
+          <div class="hero__meta hero__meta--light">
+            <div>
+              <span class="meta__label">관리 기능</span>
+              <strong>출품작 등록 / 수정</strong>
+            </div>
+            <div>
+              <span class="meta__label">투표 관리</span>
+              <strong>마감 / 초기화</strong>
+            </div>
+          </div>
+        </div>
+        <div class="hero-note" aria-hidden="true">
+          <strong>관리자 전용 화면</strong>
+          <span>유튜브 링크 등록과 투표 운영 관리를 여기에서 진행합니다.</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout layout--admin">
+      <section class="panel">
+        <div class="panel__heading">
+          <h2>관리자 인증</h2>
+          <p>관리자 비밀번호를 입력하면 관리 기능이 활성화됩니다.</p>
+        </div>
+        <form id="admin-auth-form" class="vote-form">
+          <label>
+            <span>관리자 비밀번호</span>
+            <input id="admin-password" type="password" autocomplete="off" required>
+          </label>
+          <button type="submit" class="button button--primary">관리자 접속</button>
+        </form>
+        <div id="admin-auth-status" class="status-card" aria-live="polite"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__heading">
+          <h2>출품 영상 등록</h2>
+          <p>영상 제목, 제출자, 내용, 영상 링크 순서로 입력해 주세요.</p>
+        </div>
+        <form id="video-form" class="vote-form">
+          <input id="video-id" type="hidden">
+          <label>
+            <span>영상 제목</span>
+            <input id="video-title" type="text" required>
+          </label>
+          <label>
+            <span>제출자</span>
+            <input id="video-submitter" type="text" required>
+          </label>
+          <label>
+            <span>내용</span>
+            <textarea id="video-description" rows="4" required></textarea>
+          </label>
+          <label>
+            <span>영상 링크</span>
+            <input id="video-url" type="url" placeholder="https://..." required>
+          </label>
+          <button type="submit" class="button button--primary">영상 저장</button>
+          <button type="button" id="video-form-reset" class="button button--ghost">입력 초기화</button>
+        </form>
+      </section>
+    </main>
+
+    <section class="panel panel--gallery">
+      <div class="panel__heading">
+        <h2>출품작 목록</h2>
+        <p>등록된 영상을 수정하거나 삭제할 수 있습니다.</p>
+      </div>
+      <div id="admin-video-list" class="admin-video-list"></div>
+    </section>
+
+    <section class="panel panel--gallery">
+      <div class="panel__heading">
+        <h2>투표 관리</h2>
+        <p>현재 투표 현황을 확인하고 마감, 마감 해제, 초기화를 진행할 수 있습니다.</p>
+      </div>
+      <div class="admin-toolbar">
+        <button id="close-voting" class="button button--ghost" type="button">투표 마감</button>
+        <button id="open-voting" class="button button--ghost" type="button">마감 해제</button>
+        <button id="reset-votes" class="button button--ghost" type="button">전체 투표 초기화</button>
+      </div>
+      <div id="admin-results" class="results-list"></div>
+      <div id="admin-vote-log" class="admin-vote-log"></div>
+    </section>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
