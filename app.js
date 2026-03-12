@@ -1,4 +1,4 @@
-const STORAGE_KEY = "company-video-voter-session";
+const STORAGE_KEY = "company-video-voter-session-v2";
 const API_BASE = "/api";
 
 let videos = [];
@@ -11,6 +11,7 @@ const form = document.querySelector("#vote-form");
 const employeeNumberInput = document.querySelector("#employee-number");
 const nameInput = document.querySelector("#voter-name");
 const selectedVideo = document.querySelector("#selected-video");
+const voteSelects = Array.from(selectedVideo.querySelectorAll(".vote-select"));
 const voteStatus = document.querySelector("#vote-status");
 const videoGrid = document.querySelector("#video-grid");
 const videoCardTemplate = document.querySelector("#video-card-template");
@@ -36,8 +37,10 @@ employeeNumberInput.addEventListener("input", () => {
   handleEmployeeNumberInput();
 });
 
-selectedVideo.addEventListener("change", () => {
-  enforceVoteSelectionLimit();
+voteSelects.forEach((select) => {
+  select.addEventListener("change", () => {
+    enforceUniqueSelections(select);
+  });
 });
 
 modalCloseButton.addEventListener("click", closeDescriptionModal);
@@ -122,7 +125,7 @@ async function handleEmployeeNumberInput() {
 
     state.employeeLookup = result;
     nameInput.value = result.voterName;
-    setStatus("1개에서 최대 3개 작품까지 선택한 뒤 투표를 제출해 주세요.");
+    setStatus("드롭다운에서 작품을 골라 최대 3개까지 선택한 뒤 투표를 제출해 주세요.");
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return;
@@ -211,39 +214,41 @@ async function submitVote() {
 }
 
 function renderVoteOptions() {
-  selectedVideo.innerHTML = videos.map((video, index) => {
-    return `
-      <label class="vote-checkbox">
-        <input type="checkbox" name="videoIds" value="${escapeHtml(video.id)}">
-        <span class="vote-checkbox__text">${escapeHtml(`Entry ${String(index + 1).padStart(2, "0")} · ${video.title}`)}</span>
-      </label>
-    `;
-  }).join("");
+  const options = [
+    { value: "", label: "없음" },
+    ...videos.map((video, index) => ({
+      value: video.id,
+      label: `${String(index + 1).padStart(2, "0")} · ${video.title}`
+    }))
+  ];
+
+  voteSelects.forEach((select) => {
+    select.innerHTML = options
+      .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+      .join("");
+  });
 }
 
-function enforceVoteSelectionLimit() {
-  const checked = getCheckedInputs();
-  if (checked.length <= 3) {
+function enforceUniqueSelections(changedSelect) {
+  const value = changedSelect.value;
+  if (!value) {
     return;
   }
 
-  const lastChecked = checked[checked.length - 1];
-  lastChecked.checked = false;
-  setStatus("최대 3개 작품까지만 선택할 수 있습니다.", "warning");
-}
-
-function getCheckedInputs() {
-  return Array.from(selectedVideo.querySelectorAll('input[type="checkbox"]:checked'));
+  voteSelects.forEach((select) => {
+    if (select !== changedSelect && select.value === value) {
+      select.value = "";
+    }
+  });
 }
 
 function getSelectedVideoIds() {
-  return getCheckedInputs().map((input) => input.value);
+  return [...new Set(voteSelects.map((select) => select.value).filter(Boolean))];
 }
 
 function applySelectedVideoIds(videoIds) {
-  const selected = new Set(videoIds);
-  selectedVideo.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.checked = selected.has(input.value);
+  voteSelects.forEach((select, index) => {
+    select.value = videoIds[index] || "";
   });
 }
 
@@ -384,7 +389,7 @@ function renderStatus() {
     return;
   }
 
-  setStatus("1개에서 최대 3개 작품까지 선택한 뒤 최초 1회만 투표할 수 있습니다.");
+  setStatus("드롭다운에서 작품을 골라 최소 1개, 최대 3개까지 최초 1회만 투표할 수 있습니다.");
 }
 
 function disableForm() {
