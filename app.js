@@ -120,7 +120,9 @@ function handleCredentialInput() {
 
   if (previousKey !== nextKey) {
     state.verifiedVoter = null;
+    currentlyPlayingVideoId = null;
     nameInput.value = "";
+    renderVideoCards();
   }
 
   renderStatus();
@@ -302,6 +304,7 @@ function applySelectedVideoIds(videoIds) {
 
 function renderVideoCards() {
   videoGrid.innerHTML = "";
+  const hasVideoAccess = Boolean(state.verifiedVoter);
 
   videos.forEach((video, index) => {
     const card = videoCardTemplate.content.firstElementChild.cloneNode(true);
@@ -314,6 +317,7 @@ function renderVideoCards() {
     const moreButton = card.querySelector(".video-card__more");
 
     card.classList.toggle("is-playing", currentlyPlayingVideoId === video.id || Boolean(video.localVideoUrl));
+    card.classList.toggle("is-locked", !hasVideoAccess);
     indexBadge.textContent = String(index + 1);
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
     title.textContent = stripLeadingNumber(video.title);
@@ -501,6 +505,7 @@ async function ensureVideoAccess() {
 
   const verified = await verifyVoter();
   if (!verified) {
+    showToast("사원번호와 비밀번호를 먼저 확인해 주세요.", "warning");
     return false;
   }
 

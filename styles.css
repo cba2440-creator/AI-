@@ -365,7 +365,22 @@ a {
   box-shadow: 0 16px 28px rgba(31, 41, 55, 0.08);
 }
 
+.video-card.is-locked .video-card__media::after {
+  content: "사원번호와 비밀번호 입력 후 재생 가능";
+  position: absolute;
+  inset: auto 14px 14px 14px;
+  z-index: 1;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(9, 14, 20, 0.72);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
 .video-card__media {
+  position: relative;
   aspect-ratio: 16 / 9;
   background: #10151a;
 }
