@@ -16,6 +16,10 @@ const VOTES_PATH = path.join(DATA_DIR, "votes.json");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
 const EMPLOYEES_PATH = path.join(DATA_DIR, "employees.json");
 const MEDIA_DIR = path.join(DATA_DIR, "uploads");
+const BACKUP_DIR = path.join(DATA_DIR, "backups");
+const MEDIA_BACKUP_DIR = path.join(BACKUP_DIR, "uploads");
+const JSON_BACKUP_RETENTION = 40;
+const MEDIA_BACKUP_RETENTION = 20;
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -206,6 +210,14 @@ function ensureDataFiles() {
 
   if (!fs.existsSync(MEDIA_DIR)) {
     fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(BACKUP_DIR)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(MEDIA_BACKUP_DIR)) {
+    fs.mkdirSync(MEDIA_BACKUP_DIR, { recursive: true });
   }
 }
 
@@ -434,6 +446,7 @@ function handleVideoUpload(request, response, id) {
     writeJson(VIDEOS_PATH, videos);
 
     if (previousUrl) {
+      backupMediaFile(path.join(MEDIA_DIR, path.basename(previousUrl)));
       safelyDeleteFile(path.join(MEDIA_DIR, path.basename(previousUrl)));
     }
 
@@ -468,6 +481,7 @@ function handleVideoDelete(response, id) {
   );
 
   if (target?.localVideoUrl) {
+    backupMediaFile(path.join(MEDIA_DIR, path.basename(target.localVideoUrl)));
     safelyDeleteFile(path.join(MEDIA_DIR, path.basename(target.localVideoUrl)));
   }
   return sendJson(response, 200, { message: "영상과 관련 투표가 삭제되었습니다." });
@@ -664,7 +678,18 @@ function readJson(filePath) {
 }
 
 function writeJson(filePath, payload) {
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+  const nextContent = JSON.stringify(payload, null, 2);
+  const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+
+  if (currentContent === nextContent) {
+    return;
+  }
+
+  if (currentContent) {
+    createJsonBackup(filePath, currentContent);
+  }
+
+  fs.writeFileSync(filePath, nextContent, "utf8");
 }
 
 function sendJson(response, statusCode, payload) {
@@ -700,4 +725,53 @@ function safelyDeleteFile(filePath) {
       fs.unlinkSync(filePath);
     }
   } catch {}
+}
+
+function createJsonBackup(filePath, content) {
+  try {
+    const baseName = path.basename(filePath, path.extname(filePath));
+    const stamp = createBackupStamp();
+    const versionedPath = path.join(BACKUP_DIR, `${baseName}-${stamp}.json`);
+    const latestPath = path.join(BACKUP_DIR, `${baseName}-latest.json`);
+
+    fs.writeFileSync(versionedPath, content, "utf8");
+    fs.writeFileSync(latestPath, content, "utf8");
+    pruneBackups(BACKUP_DIR, `${baseName}-`, ".json", JSON_BACKUP_RETENTION, [`${baseName}-latest.json`]);
+  } catch {}
+}
+
+function backupMediaFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return;
+    }
+
+    const extension = path.extname(filePath);
+    const baseName = path.basename(filePath, extension);
+    const stamp = createBackupStamp();
+    const backupPath = path.join(MEDIA_BACKUP_DIR, `${baseName}-${stamp}${extension}`);
+    fs.copyFileSync(filePath, backupPath);
+    pruneBackups(MEDIA_BACKUP_DIR, `${baseName}-`, extension, MEDIA_BACKUP_RETENTION);
+  } catch {}
+}
+
+function pruneBackups(directoryPath, prefix, extension, retention, keepNames = []) {
+  try {
+    const files = fs.readdirSync(directoryPath)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(extension) && !keepNames.includes(name))
+      .map((name) => ({
+        name,
+        fullPath: path.join(directoryPath, name),
+        mtimeMs: fs.statSync(path.join(directoryPath, name)).mtimeMs
+      }))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+    files.slice(retention).forEach((file) => {
+      safelyDeleteFile(file.fullPath);
+    });
+  } catch {}
+}
+
+function createBackupStamp() {
+  return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
 }
