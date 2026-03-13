@@ -306,12 +306,14 @@ function renderVideoCards() {
   videos.forEach((video, index) => {
     const card = videoCardTemplate.content.firstElementChild.cloneNode(true);
     const media = card.querySelector(".video-card__media");
+    const indexBadge = card.querySelector(".video-card__index-badge");
     const topline = card.querySelector(".video-card__topline");
     const title = card.querySelector("h3");
     const description = card.querySelector(".video-card__description");
     const link = card.querySelector("a");
     const moreButton = card.querySelector(".video-card__more");
 
+    indexBadge.textContent = String(index + 1);
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
     title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");

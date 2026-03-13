@@ -352,6 +352,7 @@ a {
 }
 
 .video-card {
+  position: relative;
   overflow: hidden;
   border: 1px solid #dbe3ea;
   border-radius: 18px;
@@ -367,6 +368,25 @@ a {
 .video-card__media {
   aspect-ratio: 16 / 9;
   background: #10151a;
+}
+
+.video-card__index-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: #00adef;
+  color: #ffffff;
+  font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(0, 173, 239, 0.28);
 }
 
 .video-card__media iframe,
