@@ -375,7 +375,7 @@ function createMediaElement(video) {
 }
 
 function getYoutubeId(url) {
-  const match = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/watch\?v=|youtube\.com\/embed\/)([^?&/]+)/i);
+  const match = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/i);
   return match ? match[1] : null;
 }
 
