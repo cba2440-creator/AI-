@@ -319,6 +319,14 @@ function renderVideoCards() {
     title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");
     link.href = video.url;
+    link.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const canAccess = await ensureVideoAccess();
+      if (!canAccess) {
+        return;
+      }
+      window.open(video.url, "_blank", "noopener,noreferrer");
+    });
     moreButton.addEventListener("click", () => openDescriptionModal(video));
 
     media.appendChild(createMediaElement(video));
@@ -328,13 +336,18 @@ function renderVideoCards() {
 
 function createMediaElement(video) {
   if (video.localVideoUrl) {
-    const videoElement = document.createElement("video");
-    videoElement.src = video.localVideoUrl;
-    videoElement.controls = true;
-    videoElement.preload = "metadata";
-    videoElement.playsInline = true;
-    videoElement.setAttribute("controlsList", "nodownload");
-    return videoElement;
+    if (currentlyPlayingVideoId === video.id) {
+      const videoElement = document.createElement("video");
+      videoElement.src = video.localVideoUrl;
+      videoElement.controls = true;
+      videoElement.preload = "metadata";
+      videoElement.playsInline = true;
+      videoElement.autoplay = true;
+      videoElement.setAttribute("controlsList", "nodownload");
+      return videoElement;
+    }
+
+    return createLaunchButton(video, "");
   }
 
   const youtubeId = getYoutubeId(video.url);
@@ -350,28 +363,42 @@ function createMediaElement(video) {
       return iframe;
     }
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "video-card__launch";
-    button.style.backgroundImage = `linear-gradient(180deg, rgba(11, 17, 24, 0.14), rgba(11, 17, 24, 0.38)), url(https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg)`;
-    button.setAttribute("aria-label", `${video.title} 재생`);
-    button.addEventListener("click", () => {
-      currentlyPlayingVideoId = video.id;
-      renderVideoCards();
-    });
-
-    const badge = document.createElement("span");
-    badge.className = "video-card__launch-badge";
-    badge.textContent = "재생";
-    button.appendChild(badge);
-
-    return button;
+    return createLaunchButton(
+      video,
+      `linear-gradient(180deg, rgba(11, 17, 24, 0.14), rgba(11, 17, 24, 0.38)), url(https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg)`
+    );
   }
 
   const fallback = document.createElement("div");
   fallback.className = "video-card__placeholder";
   fallback.textContent = "미리보기를 지원하지 않는 링크입니다. 유튜브로 보기 버튼으로 확인해 주세요.";
   return fallback;
+}
+
+function createLaunchButton(video, backgroundImage) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "video-card__launch";
+  if (backgroundImage) {
+    button.style.backgroundImage = backgroundImage;
+  }
+  button.setAttribute("aria-label", `${video.title} 재생`);
+  button.addEventListener("click", async () => {
+    const canAccess = await ensureVideoAccess();
+    if (!canAccess) {
+      return;
+    }
+
+    currentlyPlayingVideoId = video.id;
+    renderVideoCards();
+  });
+
+  const badge = document.createElement("span");
+  badge.className = "video-card__launch-badge";
+  badge.textContent = "재생";
+  button.appendChild(badge);
+
+  return button;
 }
 
 function getYoutubeId(url) {
@@ -456,6 +483,28 @@ async function refreshMetaState() {
       votingClosed = nextVotingClosed;
     }
   } catch {}
+}
+
+async function ensureVideoAccess() {
+  const employeeNumber = employeeNumberInput.value.trim();
+  const password = employeePasswordInput.value.trim();
+
+  if (!employeeNumber || !password) {
+    showToast("사원번호와 비밀번호를 먼저 입력해 주세요.", "warning");
+    if (!employeeNumber) {
+      employeeNumberInput.focus();
+    } else {
+      employeePasswordInput.focus();
+    }
+    return false;
+  }
+
+  const verified = await verifyVoter();
+  if (!verified) {
+    return false;
+  }
+
+  return true;
 }
 
 function updateFormAvailability() {
