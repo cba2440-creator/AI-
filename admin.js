@@ -1,5 +1,6 @@
 const API_BASE = "/api/admin";
 const ADMIN_SESSION_KEY = "ai-awards-admin-session";
+const ADMIN_MASK_VALUE = "••••••••••";
 
 const authForm = document.querySelector("#admin-auth-form");
 const passwordInput = document.querySelector("#admin-password");
@@ -55,6 +56,7 @@ authForm.addEventListener("submit", async (event) => {
   }
 
   persistAdminSession();
+  showMaskedPassword();
   showToast("인증되었습니다.");
   await loadDashboard();
 });
@@ -574,6 +576,7 @@ function restoreAdminSession() {
     passwordInput.value = "";
     authenticateAdmin().then((authenticated) => {
       if (authenticated) {
+        showMaskedPassword();
         loadDashboard();
       }
     });
@@ -590,6 +593,10 @@ function clearAdminSession() {
   try {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
   } catch {}
+}
+
+function showMaskedPassword() {
+  passwordInput.value = ADMIN_MASK_VALUE;
 }
 
 function escapeHtml(value) {
