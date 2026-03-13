@@ -210,6 +210,13 @@ a {
   font-weight: 700;
 }
 
+.form-hint {
+  margin: -4px 0 2px;
+  color: #66717d;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 .vote-form input,
 .vote-form select,
 .vote-form textarea {

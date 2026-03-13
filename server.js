@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 const XLSX = require("xlsx");
+const Busboy = require("busboy");
 
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall2020!";
@@ -14,12 +15,14 @@ const VIDEOS_PATH = path.join(DATA_DIR, "videos.json");
 const VOTES_PATH = path.join(DATA_DIR, "votes.json");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
 const EMPLOYEES_PATH = path.join(DATA_DIR, "employees.json");
+const MEDIA_DIR = path.join(DATA_DIR, "uploads");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".mp4": "video/mp4",
   ".png": "image/png",
   ".svg": "image/svg+xml; charset=utf-8"
 };
@@ -91,6 +94,16 @@ const server = http.createServer(async (request, response) => {
     return handleVideoDelete(response, pathname.split("/").pop());
   }
 
+  if (pathname.match(/^\/api\/admin\/videos\/[^/]+\/upload$/) && request.method === "POST") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    const parts = pathname.split("/");
+    const videoId = parts[parts.length - 2];
+    return handleVideoUpload(request, response, videoId);
+  }
+
   if (pathname.startsWith("/api/admin/votes/") && request.method === "DELETE") {
     if (!isAuthorizedAdmin(request)) {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
@@ -154,6 +167,10 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, { ok: true });
   }
 
+  if (pathname.startsWith("/media/") && request.method === "GET") {
+    return serveMedia(pathname, response);
+  }
+
   return serveStatic(pathname, response);
 });
 
@@ -185,6 +202,10 @@ function ensureDataFiles() {
 
   if (!fs.existsSync(EMPLOYEES_PATH)) {
     writeJson(EMPLOYEES_PATH, []);
+  }
+
+  if (!fs.existsSync(MEDIA_DIR)) {
+    fs.mkdirSync(MEDIA_DIR, { recursive: true });
   }
 }
 
@@ -326,9 +347,10 @@ async function handleVideoCreate(request, response) {
       return sendJson(response, 400, { message: "영상 정보를 모두 올바르게 입력해 주세요." });
     }
 
-    videos.push({ id: createVideoId(payload.title, videos), ...payload });
+    const video = { id: createVideoId(payload.title, videos), ...payload, localVideoUrl: "" };
+    videos.push(video);
     writeJson(VIDEOS_PATH, videos);
-    return sendJson(response, 201, { message: "영상이 등록되었습니다." });
+    return sendJson(response, 201, { message: "영상이 등록되었습니다.", video });
   } catch (error) {
     return sendJson(response, 500, { message: "영상 등록에 실패했습니다." });
   }
@@ -348,17 +370,86 @@ async function handleVideoUpdate(request, response, id) {
       return sendJson(response, 404, { message: "수정할 영상을 찾지 못했습니다." });
     }
 
-    videos[index] = { id, ...payload };
+    videos[index] = { ...videos[index], id, ...payload };
     writeJson(VIDEOS_PATH, videos);
-    return sendJson(response, 200, { message: "영상이 수정되었습니다." });
+    return sendJson(response, 200, { message: "영상이 수정되었습니다.", video: videos[index] });
   } catch (error) {
     return sendJson(response, 500, { message: "영상 수정에 실패했습니다." });
   }
 }
 
+function handleVideoUpload(request, response, id) {
+  const videos = readJson(VIDEOS_PATH);
+  const index = videos.findIndex((video) => video.id === id);
+
+  if (index < 0) {
+    return sendJson(response, 404, { message: "업로드할 영상을 찾지 못했습니다." });
+  }
+
+  const busboy = Busboy({ headers: request.headers });
+  let savedFileName = "";
+  let uploadError = null;
+  let hasFile = false;
+
+  busboy.on("file", (fieldName, file, info) => {
+    if (fieldName !== "videoFile") {
+      file.resume();
+      return;
+    }
+
+    hasFile = true;
+    const extension = path.extname(info.filename || "").toLowerCase() || ".mp4";
+    if (extension !== ".mp4") {
+      uploadError = "MP4 파일만 업로드할 수 있습니다.";
+      file.resume();
+      return;
+    }
+
+    const nextFileName = `${id}-${Date.now()}${extension}`;
+    const destinationPath = path.join(MEDIA_DIR, nextFileName);
+    const writeStream = fs.createWriteStream(destinationPath);
+
+    file.pipe(writeStream);
+    savedFileName = nextFileName;
+
+    writeStream.on("error", () => {
+      uploadError = "영상 파일 저장에 실패했습니다.";
+    });
+  });
+
+  busboy.on("finish", () => {
+    if (uploadError) {
+      if (savedFileName) {
+        safelyDeleteFile(path.join(MEDIA_DIR, savedFileName));
+      }
+      return sendJson(response, 400, { message: uploadError });
+    }
+
+    if (!hasFile || !savedFileName) {
+      return sendJson(response, 400, { message: "업로드할 MP4 파일을 선택해 주세요." });
+    }
+
+    const previousUrl = videos[index].localVideoUrl;
+    videos[index].localVideoUrl = `/media/${savedFileName}`;
+    writeJson(VIDEOS_PATH, videos);
+
+    if (previousUrl) {
+      safelyDeleteFile(path.join(MEDIA_DIR, path.basename(previousUrl)));
+    }
+
+    return sendJson(response, 200, {
+      message: "사이트 재생용 영상 파일이 업로드되었습니다.",
+      localVideoUrl: videos[index].localVideoUrl
+    });
+  });
+
+  request.pipe(busboy);
+}
+
 function handleVideoDelete(response, id) {
   const videos = readJson(VIDEOS_PATH);
   const votes = readJson(VOTES_PATH);
+  const target = videos.find((video) => video.id === id);
   const nextVideos = videos.filter((video) => video.id !== id);
 
   if (nextVideos.length === videos.length) {
@@ -375,6 +466,10 @@ function handleVideoDelete(response, id) {
       }))
       .filter((vote) => vote.videoIds.length > 0)
   );
+
+  if (target?.localVideoUrl) {
+    safelyDeleteFile(path.join(MEDIA_DIR, path.basename(target.localVideoUrl)));
+  }
   return sendJson(response, 200, { message: "영상과 관련 투표가 삭제되었습니다." });
 }
 
@@ -513,6 +608,31 @@ function serveStatic(pathname, response) {
   });
 }
 
+function serveMedia(pathname, response) {
+  const fileName = pathname.replace(/^\/media\//, "");
+  const filePath = path.join(MEDIA_DIR, fileName);
+
+  if (!filePath.startsWith(MEDIA_DIR)) {
+    response.writeHead(403);
+    response.end("Forbidden");
+    return;
+  }
+
+  fs.readFile(filePath, (error, content) => {
+    if (error) {
+      response.writeHead(404);
+      response.end("Not found");
+      return;
+    }
+
+    response.writeHead(200, {
+      "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Accept-Ranges": "bytes"
+    });
+    response.end(content);
+  });
+}
+
 function normalizeVoteVideoIds(vote) {
   if (Array.isArray(vote.videoIds)) {
     return vote.videoIds;
@@ -572,4 +692,12 @@ function sanitizeText(value) {
 
 function stripLeadingNumber(title) {
   return String(title || "").replace(/^\d+\.\s*/, "");
+}
+
+function safelyDeleteFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {}
 }

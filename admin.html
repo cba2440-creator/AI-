@@ -110,6 +110,11 @@
             <span>영상 링크</span>
             <input id="video-url" type="url" placeholder="https://..." required>
           </label>
+          <label>
+            <span>사이트 재생용 MP4 파일</span>
+            <input id="video-file" type="file" accept="video/mp4">
+          </label>
+          <p class="form-hint">유튜브 임베드가 막힌 영상은 MP4 파일을 함께 등록하면 이 사이트 안에서 바로 재생할 수 있습니다.</p>
           <button type="submit" class="button button--primary">영상 저장</button>
           <button type="button" id="video-form-reset" class="button button--ghost">입력 초기화</button>
         </form>

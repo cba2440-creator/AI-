@@ -20,6 +20,7 @@ const titleInput = document.querySelector("#video-title");
 const submitterInput = document.querySelector("#video-submitter");
 const descriptionInput = document.querySelector("#video-description");
 const urlInput = document.querySelector("#video-url");
+const videoFileInput = document.querySelector("#video-file");
 const videoFormResetButton = document.querySelector("#video-form-reset");
 const adminVideoList = document.querySelector("#admin-video-list");
 const adminResults = document.querySelector("#admin-results");
@@ -89,6 +90,27 @@ videoForm.addEventListener("submit", async (event) => {
   if (!response.ok) {
     setAuthStatus(result.message || "영상 저장에 실패했습니다.", "warning");
     return;
+  }
+
+  const savedVideoId = result.video?.id || videoIdInput.value;
+
+  if (videoFileInput.files[0] && savedVideoId) {
+    const uploadFormData = new FormData();
+    uploadFormData.append("videoFile", videoFileInput.files[0]);
+
+    const uploadResponse = await fetch(`${API_BASE}/videos/${savedVideoId}/upload`, {
+      method: "POST",
+      headers: {
+        "x-admin-password": adminPassword
+      },
+      body: uploadFormData
+    });
+    const uploadResult = await uploadResponse.json();
+
+    if (!uploadResponse.ok) {
+      setAuthStatus(uploadResult.message || "영상 파일 업로드에 실패했습니다.", "warning");
+      return;
+    }
   }
 
   clearVideoForm();
@@ -230,6 +252,7 @@ function renderVideoList(videos) {
         <div class="admin-video-card__meta">${escapeHtml(video.submitter)}</div>
         <div class="admin-video-card__meta">${escapeHtml(video.description)}</div>
         <div class="admin-video-card__link">${escapeHtml(video.url)}</div>
+        <div class="admin-video-card__meta">${video.localVideoUrl ? "사이트 재생용 파일 등록됨" : "사이트 재생용 파일 없음"}</div>
       </div>
       <div class="admin-video-card__actions">
         <button class="button button--ghost" type="button" data-action="edit" data-id="${escapeHtml(video.id)}">수정</button>
@@ -382,6 +405,7 @@ async function deleteVote(employeeNumber) {
 function clearVideoForm() {
   videoForm.reset();
   videoIdInput.value = "";
+  videoFileInput.value = "";
 }
 
 async function adminFetch(url, options = {}) {

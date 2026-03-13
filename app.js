@@ -322,6 +322,16 @@ function renderVideoCards() {
 }
 
 function createMediaElement(video) {
+  if (video.localVideoUrl) {
+    const videoElement = document.createElement("video");
+    videoElement.src = video.localVideoUrl;
+    videoElement.controls = true;
+    videoElement.preload = "metadata";
+    videoElement.playsInline = true;
+    videoElement.setAttribute("controlsList", "nodownload");
+    return videoElement;
+  }
+
   const youtubeId = getYoutubeId(video.url);
 
   if (video.type === "youtube" && youtubeId) {
