@@ -23,7 +23,8 @@ const modalTitle = document.querySelector("#modal-title");
 const modalDescription = document.querySelector("#modal-description");
 
 const state = {
-  verifiedVoter: null
+  verifiedVoter: null,
+  lastVerifiedKey: ""
 };
 
 initialize();
@@ -120,6 +121,7 @@ function handleCredentialInput() {
 
   if (previousKey !== nextKey) {
     state.verifiedVoter = null;
+    state.lastVerifiedKey = "";
     currentlyPlayingVideoId = null;
     nameInput.value = "";
     renderVideoCards();
@@ -169,7 +171,9 @@ async function verifyVoter() {
 
     if (!response.ok) {
       state.verifiedVoter = null;
+      state.lastVerifiedKey = "";
       nameInput.value = "";
+      renderVideoCards();
       renderStatus();
       updateFormAvailability();
       showToast(result.message || "사원번호 또는 비밀번호를 다시 확인해 주세요.", "warning");
@@ -184,16 +188,27 @@ async function verifyVoter() {
       videoIds: Array.isArray(result.videoIds) ? result.videoIds : []
     };
 
+    const shouldAnnounceVerification = state.lastVerifiedKey !== currentKey;
+    state.lastVerifiedKey = currentKey;
     nameInput.value = result.voterName;
     applySelectedVideoIds(result.videoIds || []);
+    renderVideoCards();
     renderStatus();
     updateFormAvailability();
+    if (shouldAnnounceVerification) {
+      showToast("인증되었습니다.", "success");
+    }
     return true;
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return false;
     }
 
+    state.verifiedVoter = null;
+    state.lastVerifiedKey = "";
+    renderVideoCards();
+    renderStatus();
+    updateFormAvailability();
     showToast("본인 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
     return false;
   }
