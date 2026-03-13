@@ -377,16 +377,20 @@ a {
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   background: #00adef;
   color: #ffffff;
   font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
-  font-size: 1.35rem;
+  font-size: 1.12rem;
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 10px 24px rgba(0, 173, 239, 0.28);
+}
+
+.video-card__index-badge.is-hidden {
+  display: none;
 }
 
 .video-card__media iframe,
