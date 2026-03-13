@@ -696,7 +696,8 @@ function serveStatic(pathname, response) {
     }
 
     response.writeHead(200, {
-      "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream"
+      "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Cache-Control": "no-store"
     });
     response.end(content);
   });

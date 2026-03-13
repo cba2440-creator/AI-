@@ -342,7 +342,7 @@ function createMediaElement(video) {
   if (video.type === "youtube" && youtubeId) {
     if (currentlyPlayingVideoId === video.id) {
       const iframe = document.createElement("iframe");
-      iframe.src = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0`;
+      iframe.src = `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&playsinline=1`;
       iframe.title = video.title;
       iframe.loading = "lazy";
       iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
