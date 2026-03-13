@@ -167,6 +167,22 @@ const server = http.createServer(async (request, response) => {
     return handleExportResults(response);
   }
 
+  if (pathname === "/api/admin/backups/videos" && request.method === "GET") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return sendJson(response, 200, { backups: listJsonBackups("videos") });
+  }
+
+  if (pathname === "/api/admin/backups/videos/restore-latest" && request.method === "POST") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handleRestoreLatestVideosBackup(response);
+  }
+
   if (pathname === "/healthz" && request.method === "GET") {
     return sendJson(response, 200, { ok: true });
   }
@@ -565,6 +581,25 @@ function handleExportResults(response) {
   response.end(buffer);
 }
 
+function handleRestoreLatestVideosBackup(response) {
+  const backups = listJsonBackups("videos");
+
+  if (!backups.length) {
+    return sendJson(response, 404, { message: "복원 가능한 영상 백업이 없습니다." });
+  }
+
+  const latestBackup = backups[0];
+  const backupPath = path.join(BACKUP_DIR, latestBackup.name);
+  const payload = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+  writeJson(VIDEOS_PATH, payload);
+
+  return sendJson(response, 200, {
+    message: "최신 영상 백업으로 복원되었습니다.",
+    restoredBackup: latestBackup.name,
+    count: Array.isArray(payload) ? payload.length : 0
+  });
+}
+
 function normalizeVideoPayload(payload) {
   const title = sanitizeText(payload.title);
   const submitter = sanitizeText(payload.submitter);
@@ -738,6 +773,25 @@ function createJsonBackup(filePath, content) {
     fs.writeFileSync(latestPath, content, "utf8");
     pruneBackups(BACKUP_DIR, `${baseName}-`, ".json", JSON_BACKUP_RETENTION, [`${baseName}-latest.json`]);
   } catch {}
+}
+
+function listJsonBackups(baseName) {
+  try {
+    return fs.readdirSync(BACKUP_DIR)
+      .filter((name) => name.startsWith(`${baseName}-`) && name.endsWith(".json") && name !== `${baseName}-latest.json`)
+      .map((name) => {
+        const fullPath = path.join(BACKUP_DIR, name);
+        const stat = fs.statSync(fullPath);
+        return {
+          name,
+          size: stat.size,
+          updatedAt: stat.mtime.toISOString()
+        };
+      })
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  } catch {
+    return [];
+  }
 }
 
 function backupMediaFile(filePath) {
