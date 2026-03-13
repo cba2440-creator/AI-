@@ -79,7 +79,7 @@ a {
 }
 
 .hero h1 {
-  margin: 0;
+  margin: 0 0 2px;
   font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
   font-size: clamp(2rem, 3.8vw, 3.2rem);
   line-height: 1.08;
