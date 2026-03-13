@@ -313,8 +313,8 @@ function renderVideoCards() {
     const link = card.querySelector("a");
     const moreButton = card.querySelector(".video-card__more");
 
+    card.classList.toggle("is-playing", currentlyPlayingVideoId === video.id || Boolean(video.localVideoUrl));
     indexBadge.textContent = String(index + 1);
-    indexBadge.classList.toggle("is-hidden", currentlyPlayingVideoId === video.id);
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
     title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");

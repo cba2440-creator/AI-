@@ -372,23 +372,24 @@ a {
 
 .video-card__index-badge {
   position: absolute;
-  top: 14px;
-  left: 14px;
+  top: 10px;
+  left: 10px;
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   background: #00adef;
   color: #ffffff;
   font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
-  font-size: 1.12rem;
+  font-size: 0.88rem;
   font-weight: 700;
   line-height: 1;
-  box-shadow: 0 10px 24px rgba(0, 173, 239, 0.28);
+  box-shadow: 0 8px 18px rgba(0, 173, 239, 0.24);
 }
 
+.video-card.is-playing .video-card__index-badge,
 .video-card__index-badge.is-hidden {
   display: none;
 }
