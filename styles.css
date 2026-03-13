@@ -92,7 +92,7 @@ a {
 
 .hero__badge--light {
   display: inline-flex;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
   padding: 8px 12px;
   border-radius: 999px;
   background: #e9eff6;
@@ -112,7 +112,7 @@ a {
 }
 
 .hero__text-group {
-  margin: 14px 0 22px;
+  margin: 8px 0 22px;
 }
 
 .hero__text-group .hero__text {
