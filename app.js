@@ -372,26 +372,16 @@ function createMediaElement(video) {
   const youtubeId = getYoutubeId(video.url);
 
   if (video.type === "youtube" && youtubeId) {
-    if (currentlyPlayingVideoId === video.id) {
-      const iframe = document.createElement("iframe");
-      iframe.src = `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&playsinline=1`;
-      iframe.title = video.title;
-      iframe.loading = "lazy";
-      iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-      iframe.allowFullscreen = true;
-      return iframe;
-    }
-
-    return createLaunchButton(
+    return createExternalVideoButton(
       video,
       `linear-gradient(180deg, rgba(11, 17, 24, 0.14), rgba(11, 17, 24, 0.38)), url(https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg)`
     );
   }
 
-  const fallback = document.createElement("div");
-  fallback.className = "video-card__placeholder";
-  fallback.textContent = "미리보기를 지원하지 않는 링크입니다. 유튜브로 보기 버튼으로 확인해 주세요.";
-  return fallback;
+  return createExternalVideoButton(
+    video,
+    "linear-gradient(180deg, rgba(11, 17, 24, 0.36), rgba(11, 17, 24, 0.56))"
+  );
 }
 
 function createLaunchButton(video, backgroundImage) {
@@ -410,6 +400,25 @@ function createLaunchButton(video, backgroundImage) {
 
     currentlyPlayingVideoId = video.id;
     renderVideoCards();
+  });
+  return button;
+}
+
+function createExternalVideoButton(video, backgroundImage) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "video-card__launch video-card__launch--external";
+  if (backgroundImage) {
+    button.style.backgroundImage = backgroundImage;
+  }
+  button.setAttribute("aria-label", `${video.title} 유튜브로 보기`);
+  button.addEventListener("click", async () => {
+    const canAccess = await ensureVideoAccess();
+    if (!canAccess) {
+      return;
+    }
+
+    window.open(video.url, "_blank", "noopener,noreferrer");
   });
   return button;
 }
