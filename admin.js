@@ -180,13 +180,13 @@ videoBulkForm?.addEventListener("submit", async (event) => {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "엑셀 일괄 등록에 실패했습니다.", "warning");
+    setAuthStatus(result.message || "엑셀 덮어쓰기 등록에 실패했습니다.", "warning");
     return;
   }
 
   videoBulkForm.reset();
-  setAuthStatus(result.message || "엑셀 일괄 등록이 완료되었습니다.", "success");
-  showToast(result.message || "엑셀 일괄 등록이 완료되었습니다.");
+  setAuthStatus(result.message || "엑셀 덮어쓰기 등록이 완료되었습니다.", "success");
+  showToast(result.message || "엑셀 덮어쓰기 등록이 완료되었습니다.");
   await loadDashboard();
 });
 

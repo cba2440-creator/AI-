@@ -731,7 +731,6 @@ function handleVideoImport(request, response) {
         return sendJson(response, 400, { message: "엑셀 파일에 등록할 영상 정보가 없습니다." });
       }
 
-      const videos = readJson(VIDEOS_PATH);
       const importedVideos = [];
 
       for (const row of rows) {
@@ -747,14 +746,11 @@ function handleVideoImport(request, response) {
           continue;
         }
 
-        const video = {
-          id: createVideoId(payload.title, videos),
+        importedVideos.push({
+          id: createVideoId(payload.title, importedVideos),
           ...payload,
           localVideoUrl: ""
-        };
-
-        videos.push(video);
-        importedVideos.push(video);
+        });
       }
 
       if (!importedVideos.length) {
@@ -763,9 +759,18 @@ function handleVideoImport(request, response) {
         });
       }
 
-      writeJson(VIDEOS_PATH, videos);
+      const nextVideoIds = new Set(importedVideos.map((video) => video.id));
+      const filteredVotes = readJson(VOTES_PATH)
+        .map((vote) => ({
+          ...vote,
+          videoIds: normalizeVoteVideoIds(vote).filter((videoId) => nextVideoIds.has(videoId))
+        }))
+        .filter((vote) => vote.videoIds.length > 0);
+
+      writeJson(VIDEOS_PATH, importedVideos);
+      writeJson(VOTES_PATH, filteredVotes);
       return sendJson(response, 201, {
-        message: `${importedVideos.length}개의 영상이 일괄 등록되었습니다.`,
+        message: `${importedVideos.length}개의 영상으로 기존 목록을 덮어썼습니다.`,
         count: importedVideos.length,
         videos: importedVideos
       });
