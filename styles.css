@@ -111,6 +111,18 @@ a {
   line-height: 1.7;
 }
 
+.hero__text-group {
+  margin: 14px 0 22px;
+}
+
+.hero__text-group .hero__text {
+  margin: 0;
+}
+
+.hero__text--sub {
+  margin-top: 4px;
+}
+
 .hero__meta--light {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 180px));
