@@ -1,4 +1,5 @@
 const API_BASE = "/api/admin";
+const ADMIN_SESSION_KEY = "ai-awards-admin-session";
 
 const authForm = document.querySelector("#admin-auth-form");
 const passwordInput = document.querySelector("#admin-password");
@@ -37,6 +38,7 @@ let pendingConfirmResolver = null;
 
 setAuthStatus("관리자 비밀번호를 입력해 주세요.");
 setAdminUIEnabled(false);
+restoreAdminSession();
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -52,6 +54,7 @@ authForm.addEventListener("submit", async (event) => {
     return;
   }
 
+  persistAdminSession();
   showToast("인증되었습니다.");
   await loadDashboard();
 });
@@ -449,6 +452,7 @@ async function handleAuthFailure(response) {
 
   adminPassword = "";
   isAuthenticated = false;
+  clearAdminSession();
   setAdminUIEnabled(false);
   passwordInput.value = "";
   setAuthStatus(message, "warning");
@@ -557,6 +561,35 @@ function setAuthStatus(message, tone = "") {
 
 function stripLeadingNumber(title) {
   return String(title || "").replace(/^\d+\.\s*/, "");
+}
+
+function restoreAdminSession() {
+  try {
+    const savedPassword = sessionStorage.getItem(ADMIN_SESSION_KEY) || "";
+    if (!savedPassword) {
+      return;
+    }
+
+    adminPassword = savedPassword;
+    passwordInput.value = "";
+    authenticateAdmin().then((authenticated) => {
+      if (authenticated) {
+        loadDashboard();
+      }
+    });
+  } catch {}
+}
+
+function persistAdminSession() {
+  try {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, adminPassword);
+  } catch {}
+}
+
+function clearAdminSession() {
+  try {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  } catch {}
 }
 
 function escapeHtml(value) {
