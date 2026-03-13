@@ -8,9 +8,15 @@ const Busboy = require("busboy");
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall2020!";
 const ROOT = __dirname;
-const DATA_DIR = path.isAbsolute(process.env.DATA_DIR || "")
-  ? process.env.DATA_DIR
-  : path.join(ROOT, process.env.DATA_DIR || "data");
+const DEFAULT_RENDER_DATA_DIR = "/var/data/ai-promotion-awards";
+const DEFAULT_LOCAL_DATA_DIR = path.join(ROOT, "data");
+const CONFIGURED_DATA_DIR =
+  process.env.DATA_DIR ||
+  process.env.RENDER_DISK_MOUNT_PATH ||
+  (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR);
+const DATA_DIR = path.isAbsolute(CONFIGURED_DATA_DIR)
+  ? CONFIGURED_DATA_DIR
+  : path.join(ROOT, CONFIGURED_DATA_DIR);
 const VIDEOS_PATH = path.join(DATA_DIR, "videos.json");
 const VOTES_PATH = path.join(DATA_DIR, "votes.json");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
@@ -167,6 +173,14 @@ const server = http.createServer(async (request, response) => {
     return handleExportResults(response);
   }
 
+  if (pathname === "/api/admin/storage-status" && request.method === "GET") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return sendJson(response, 200, getStorageStatus());
+  }
+
   if (pathname === "/api/admin/backups/videos" && request.method === "GET") {
     if (!isAuthorizedAdmin(request)) {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
@@ -197,12 +211,23 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, () => {
   console.log(`직원용 사이트: http://localhost:${PORT}`);
   console.log(`관리자용 사이트: http://localhost:${PORT}/admin`);
+  console.log(`데이터 경로: ${DATA_DIR}`);
 });
 
 function ensureDataFiles() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+
+  if (!fs.existsSync(BACKUP_DIR)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(MEDIA_BACKUP_DIR)) {
+    fs.mkdirSync(MEDIA_BACKUP_DIR, { recursive: true });
+  }
+
+  migrateBundledDataIfNeeded();
 
   if (!fs.existsSync(VIDEOS_PATH)) {
     writeJson(VIDEOS_PATH, defaultVideos());
@@ -227,14 +252,6 @@ function ensureDataFiles() {
   if (!fs.existsSync(MEDIA_DIR)) {
     fs.mkdirSync(MEDIA_DIR, { recursive: true });
   }
-
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-
-  if (!fs.existsSync(MEDIA_BACKUP_DIR)) {
-    fs.mkdirSync(MEDIA_BACKUP_DIR, { recursive: true });
-  }
 }
 
 function defaultVideos() {
@@ -256,6 +273,34 @@ function defaultVideos() {
       url: "https://www.youtube.com/watch?v=LgRp9isEuSo"
     }
   ];
+}
+
+function migrateBundledDataIfNeeded() {
+  const bundledDataDir = DEFAULT_LOCAL_DATA_DIR;
+  const bundledVideosPath = path.join(bundledDataDir, "videos.json");
+  const bundledVotesPath = path.join(bundledDataDir, "votes.json");
+  const bundledStatePath = path.join(bundledDataDir, "state.json");
+  const bundledEmployeesPath = path.join(bundledDataDir, "employees.json");
+
+  if (DATA_DIR === bundledDataDir) {
+    return;
+  }
+
+  if (!fs.existsSync(VIDEOS_PATH) && fs.existsSync(bundledVideosPath)) {
+    fs.copyFileSync(bundledVideosPath, VIDEOS_PATH);
+  }
+
+  if (!fs.existsSync(VOTES_PATH) && fs.existsSync(bundledVotesPath)) {
+    fs.copyFileSync(bundledVotesPath, VOTES_PATH);
+  }
+
+  if (!fs.existsSync(STATE_PATH) && fs.existsSync(bundledStatePath)) {
+    fs.copyFileSync(bundledStatePath, STATE_PATH);
+  }
+
+  if (!fs.existsSync(EMPLOYEES_PATH) && fs.existsSync(bundledEmployeesPath)) {
+    fs.copyFileSync(bundledEmployeesPath, EMPLOYEES_PATH);
+  }
 }
 
 function handleEligibleVoterLookup(response, searchParams) {
@@ -828,4 +873,17 @@ function pruneBackups(directoryPath, prefix, extension, retention, keepNames = [
 
 function createBackupStamp() {
   return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+}
+
+function getStorageStatus() {
+  return {
+    dataDir: DATA_DIR,
+    usingRenderDiskPath: DATA_DIR === DEFAULT_RENDER_DATA_DIR,
+    videosExists: fs.existsSync(VIDEOS_PATH),
+    votesExists: fs.existsSync(VOTES_PATH),
+    stateExists: fs.existsSync(STATE_PATH),
+    employeesExists: fs.existsSync(EMPLOYEES_PATH),
+    mediaDirExists: fs.existsSync(MEDIA_DIR),
+    backupDirExists: fs.existsSync(BACKUP_DIR)
+  };
 }
