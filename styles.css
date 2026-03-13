@@ -73,6 +73,11 @@ a {
   border-bottom: 1px solid #d9e0e7;
 }
 
+.brandmark-link {
+  display: inline-flex;
+  text-decoration: none;
+}
+
 .brandmark {
   width: min(260px, 34vw);
   height: auto;
