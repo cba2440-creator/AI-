@@ -1,4 +1,5 @@
 const API_BASE = "/api";
+const META_REFRESH_INTERVAL = 15000;
 
 let videos = [];
 let votingClosed = false;
@@ -82,6 +83,12 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    refreshMetaState();
+  }
+});
+
 async function initialize() {
   try {
     const [videosResponse, metaResponse] = await Promise.all([
@@ -101,6 +108,7 @@ async function initialize() {
     renderVideoCards();
     renderStatus();
     updateFormAvailability();
+    window.setInterval(refreshMetaState, META_REFRESH_INTERVAL);
   } catch (error) {
     showToast("페이지 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
   }
@@ -190,13 +198,7 @@ async function verifyVoter() {
 }
 
 async function submitVote() {
-  try {
-    const metaResponse = await fetch(`${API_BASE}/meta`);
-    if (metaResponse.ok) {
-      const meta = await metaResponse.json();
-      votingClosed = Boolean(meta.votingClosed);
-    }
-  } catch {}
+  await refreshMetaState();
 
   if (votingClosed) {
     renderStatus();
@@ -406,6 +408,26 @@ function renderStatus() {
   }
 
   voteStatus.textContent = "투표 바랍니다";
+}
+
+async function refreshMetaState() {
+  try {
+    const metaResponse = await fetch(`${API_BASE}/meta`);
+    if (!metaResponse.ok) {
+      return;
+    }
+
+    const meta = await metaResponse.json();
+    const nextVotingClosed = Boolean(meta.votingClosed);
+
+    if (nextVotingClosed !== votingClosed) {
+      votingClosed = nextVotingClosed;
+      renderStatus();
+      updateFormAvailability();
+    } else {
+      votingClosed = nextVotingClosed;
+    }
+  } catch {}
 }
 
 function updateFormAvailability() {
