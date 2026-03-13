@@ -3,20 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 홍보 영상 어워드</title>
+  <title>2026 AI 영상 어워드</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="employee-page">
+  <div id="vote-toast" class="admin-toast" aria-live="polite"></div>
+
   <div id="description-modal" class="modal" hidden>
     <div class="modal__backdrop" data-close-modal="true"></div>
     <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button id="modal-close" class="modal__close" type="button" aria-label="닫기">×</button>
       <div class="modal__eyebrow">출품작 상세 설명</div>
       <h2 id="modal-title" class="modal__title"></h2>
-      <p id="modal-submitter" class="modal__submitter"></p>
       <div id="modal-description" class="modal__description"></div>
     </div>
   </div>
@@ -32,8 +33,8 @@
       <aside class="sidebar">
         <section class="intro-block">
           <div class="hero__badge hero__badge--light">AI PROMOTION AWARDS 2026</div>
-          <h1>AI 홍보 영상 어워드</h1>
-          <p class="hero__text">직원들이 만든 영상을 보고 가장 인상 깊은 한 편을 투표해주세요.</p>
+          <h1>2026 AI 영상 어워드</h1>
+          <p class="hero__text">직원들이 만든 영상을 보고 가장 인상 깊은 작품에 투표해 주세요.</p>
           <div class="hero__meta hero__meta--light">
             <div>
               <span class="meta__label">투표 대상</span>
@@ -49,18 +50,23 @@
         <section class="panel panel--form panel--form-sticky">
           <div class="panel__heading">
             <h2>투표 진행</h2>
-            <p>사원번호를 입력하면 이름이 자동으로 확인되며, 1인 최소 1개에서 최대 3개 작품까지 최초 1회만 투표할 수 있습니다.</p>
+            <p>본인 정보를 입력한 뒤 엔터로 다음 칸으로 이동할 수 있으며, 1인 최대 3개 작품까지 투표 가능합니다.</p>
           </div>
 
           <form id="vote-form" class="vote-form">
             <label>
               <span>사원번호</span>
-              <input id="employee-number" name="employeeNumber" type="text" placeholder="" autocomplete="off" required>
+              <input id="employee-number" name="employeeNumber" type="text" autocomplete="off" required>
+            </label>
+
+            <label>
+              <span>비밀번호</span>
+              <input id="employee-password" name="employeePassword" type="password" inputmode="numeric" maxlength="4" autocomplete="off" required>
             </label>
 
             <label>
               <span>이름</span>
-              <input id="voter-name" name="voterName" type="text" placeholder="" readonly>
+              <input id="voter-name" name="voterName" type="text" readonly tabindex="-1">
             </label>
 
             <label>
@@ -72,10 +78,10 @@
               </div>
             </label>
 
-            <button type="submit" class="button button--primary">투표 제출</button>
+            <button id="submit-button" type="submit" class="button button--primary">투표 제출</button>
           </form>
 
-          <div id="vote-status" class="status-card" aria-live="polite"></div>
+          <div id="vote-status" class="status-card status-card--centered" aria-live="polite"></div>
         </section>
       </aside>
 
@@ -84,7 +90,7 @@
           <div class="shelf__header">
             <div>
               <h2>출품 영상</h2>
-              <p>올해 사내 AI 홍보 영상 출품작입니다.</p>
+              <p>올해 사내 AI 영상 어워드 출품작입니다.</p>
             </div>
           </div>
           <div id="video-grid" class="video-grid video-grid--shelf"></div>

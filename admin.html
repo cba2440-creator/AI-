@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 홍보 영상 어워드 관리자</title>
+  <title>2026 AI 영상 어워드 관리자</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -51,22 +51,22 @@
       <div class="hero__content">
         <div class="hero__copy">
           <div class="hero__badge hero__badge--light">ADMIN CONSOLE</div>
-          <h1>AI 홍보 영상 어워드 관리자</h1>
-          <p class="hero__text">영상 등록, 출품작 수정, 투표 현황 확인과 투표 운영을 이 화면에서 관리할 수 있습니다.</p>
+          <h1>2026 AI 영상 어워드 관리자</h1>
+          <p class="hero__text">출품작 등록, 투표 현황 확인, 개별 투표 해제와 결과 다운로드를 한 화면에서 관리할 수 있습니다.</p>
           <div class="hero__meta hero__meta--light">
             <div>
-              <span class="meta__label">관리 기능</span>
-              <strong>출품작 등록 / 수정</strong>
+              <span class="meta__label">출품작 관리</span>
+              <strong>등록 / 수정 / 삭제</strong>
             </div>
             <div>
               <span class="meta__label">투표 관리</span>
-              <strong>마감 / 초기화</strong>
+              <strong>마감 / 초기화 / 엑셀</strong>
             </div>
           </div>
         </div>
         <div class="hero-note" aria-hidden="true">
-          <strong>관리자 전용 화면</strong>
-          <span>유튜브 링크 등록과 투표 운영 관리를 여기에서 진행합니다.</span>
+          <strong>관리자 전용</strong>
+          <span>투표 결과를 확인하고 필요 시 개인별 재투표를 다시 열어줄 수 있습니다.</span>
         </div>
       </div>
     </header>
@@ -75,7 +75,7 @@
       <section class="panel">
         <div class="panel__heading">
           <h2>관리자 인증</h2>
-          <p>관리자 비밀번호를 입력하면 관리 기능이 활성화됩니다.</p>
+          <p>관리자 비밀번호를 입력하면 관리자 기능이 활성화됩니다.</p>
         </div>
         <form id="admin-auth-form" class="vote-form">
           <label>
@@ -127,14 +127,19 @@
     <section class="panel panel--gallery">
       <div class="panel__heading">
         <h2>투표 관리</h2>
-        <p>현재 투표 현황을 확인하고 마감, 마감 해제, 초기화를 진행할 수 있습니다.</p>
+        <p>현재 결과를 확인하고, 전체 초기화와 개인별 재투표 해제를 진행할 수 있습니다.</p>
       </div>
       <div class="admin-toolbar">
         <button id="close-voting" class="button button--ghost" type="button">투표 마감</button>
         <button id="open-voting" class="button button--ghost" type="button">마감 해제</button>
         <button id="reset-votes" class="button button--ghost" type="button">전체 투표 초기화</button>
+        <button id="download-results" class="button button--primary" type="button">엑셀 다운로드</button>
       </div>
       <div id="admin-results" class="results-list"></div>
+      <div class="panel__heading panel__heading--sub">
+        <h2>개인별 투표 현황</h2>
+        <p>개별 삭제를 누르면 해당 직원은 다시 투표할 수 있습니다.</p>
+      </div>
       <div id="admin-vote-log" class="admin-vote-log"></div>
     </section>
   </div>

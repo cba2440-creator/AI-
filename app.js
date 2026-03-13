@@ -1,29 +1,28 @@
-const STORAGE_KEY = "company-video-voter-session-v2";
 const API_BASE = "/api";
 
 let videos = [];
-let resetVersion = 1;
 let votingClosed = false;
 let currentlyPlayingVideoId = null;
+let verificationTimer = null;
 let lookupRequestId = 0;
 
 const form = document.querySelector("#vote-form");
 const employeeNumberInput = document.querySelector("#employee-number");
+const employeePasswordInput = document.querySelector("#employee-password");
 const nameInput = document.querySelector("#voter-name");
-const selectedVideo = document.querySelector("#selected-video");
-const voteSelects = Array.from(selectedVideo.querySelectorAll(".vote-select"));
+const voteSelects = Array.from(document.querySelectorAll(".vote-select"));
+const submitButton = document.querySelector("#submit-button");
 const voteStatus = document.querySelector("#vote-status");
+const voteToast = document.querySelector("#vote-toast");
 const videoGrid = document.querySelector("#video-grid");
 const videoCardTemplate = document.querySelector("#video-card-template");
 const descriptionModal = document.querySelector("#description-modal");
 const modalCloseButton = document.querySelector("#modal-close");
 const modalTitle = document.querySelector("#modal-title");
-const modalSubmitter = document.querySelector("#modal-submitter");
 const modalDescription = document.querySelector("#modal-description");
 
 const state = {
-  submittedVote: loadSubmittedVote(),
-  employeeLookup: null
+  verifiedVoter: null
 };
 
 initialize();
@@ -33,14 +32,41 @@ form.addEventListener("submit", (event) => {
   submitVote();
 });
 
-employeeNumberInput.addEventListener("input", () => {
-  handleEmployeeNumberInput();
+employeeNumberInput.addEventListener("input", handleCredentialInput);
+employeePasswordInput.addEventListener("input", handleCredentialInput);
+
+[employeeNumberInput, employeePasswordInput, ...voteSelects].forEach((element, index, elements) => {
+  element.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (element === employeePasswordInput) {
+      const verified = await verifyVoter();
+      if (!verified) {
+        return;
+      }
+    }
+
+    const nextElement = elements[index + 1];
+    if (nextElement) {
+      nextElement.focus();
+      if ("select" in nextElement && typeof nextElement.select === "function") {
+        nextElement.select();
+      }
+      return;
+    }
+
+    if (!submitButton.disabled) {
+      submitButton.focus();
+    }
+  });
 });
 
 voteSelects.forEach((select) => {
-  select.addEventListener("change", () => {
-    enforceUniqueSelections(select);
-  });
+  select.addEventListener("change", () => enforceUniqueSelections(select));
 });
 
 modalCloseButton.addEventListener("click", closeDescriptionModal);
@@ -57,8 +83,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 async function initialize() {
-  nameInput.readOnly = true;
-
   try {
     const [videosResponse, metaResponse] = await Promise.all([
       fetch(`${API_BASE}/videos`),
@@ -66,109 +90,136 @@ async function initialize() {
     ]);
 
     if (!videosResponse.ok || !metaResponse.ok) {
-      throw new Error("초기 데이터를 불러오지 못했습니다.");
+      throw new Error("Failed to load initial data");
     }
 
     videos = await videosResponse.json();
     const meta = await metaResponse.json();
-    resetVersion = meta.resetVersion || 1;
     votingClosed = Boolean(meta.votingClosed);
-    syncStoredVoteWithResetVersion();
 
     renderVoteOptions();
     renderVideoCards();
     renderStatus();
-    toggleFormByVotingState();
-
-    if (state.submittedVote) {
-      employeeNumberInput.value = state.submittedVote.employeeNumber;
-      nameInput.value = state.submittedVote.voterName;
-      state.employeeLookup = {
-        employeeNumber: state.submittedVote.employeeNumber,
-        voterName: state.submittedVote.voterName
-      };
-      applySelectedVideoIds(state.submittedVote.videoIds || []);
-    }
+    updateFormAvailability();
   } catch (error) {
-    setStatus("지금은 투표를 진행할 수 없습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
+    showToast("페이지 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
   }
 }
 
-async function handleEmployeeNumberInput() {
-  if (state.submittedVote) {
+function handleCredentialInput() {
+  const previousKey = state.verifiedVoter ? buildCredentialKey(state.verifiedVoter.employeeNumber, state.verifiedVoter.password) : "";
+  const nextKey = buildCredentialKey(employeeNumberInput.value, employeePasswordInput.value);
+
+  if (previousKey !== nextKey) {
+    state.verifiedVoter = null;
+    nameInput.value = "";
+  }
+
+  renderStatus();
+  updateFormAvailability();
+  window.clearTimeout(verificationTimer);
+
+  if (!employeeNumberInput.value.trim() || !employeePasswordInput.value.trim()) {
     return;
   }
 
-  const employeeNumber = employeeNumberInput.value.trim();
-  state.employeeLookup = null;
-  nameInput.value = "";
+  verificationTimer = window.setTimeout(() => {
+    verifyVoter();
+  }, 250);
+}
 
-  if (!employeeNumber) {
-    renderStatus();
-    return;
+async function verifyVoter() {
+  const employeeNumber = employeeNumberInput.value.trim();
+  const password = employeePasswordInput.value.trim();
+
+  if (!employeeNumber || !password) {
+    return false;
+  }
+
+  const currentKey = buildCredentialKey(employeeNumber, password);
+  const verifiedKey = state.verifiedVoter
+    ? buildCredentialKey(state.verifiedVoter.employeeNumber, state.verifiedVoter.password)
+    : "";
+
+  if (currentKey === verifiedKey) {
+    return true;
   }
 
   const requestId = ++lookupRequestId;
 
   try {
-    const response = await fetch(`${API_BASE}/eligible-voter?employeeNumber=${encodeURIComponent(employeeNumber)}`);
+    const response = await fetch(
+      `${API_BASE}/eligible-voter?employeeNumber=${encodeURIComponent(employeeNumber)}&password=${encodeURIComponent(password)}`
+    );
     const result = await response.json();
 
     if (requestId !== lookupRequestId) {
-      return;
+      return false;
     }
 
     if (!response.ok) {
-      setStatus(result.message || "등록된 사원번호만 투표할 수 있습니다.", "warning");
-      return;
+      state.verifiedVoter = null;
+      nameInput.value = "";
+      renderStatus();
+      updateFormAvailability();
+      showToast(result.message || "사원번호 또는 비밀번호를 다시 확인해 주세요.", "warning");
+      return false;
     }
 
-    state.employeeLookup = result;
+    state.verifiedVoter = {
+      employeeNumber,
+      password,
+      voterName: result.voterName,
+      hasVoted: Boolean(result.hasVoted),
+      videoIds: Array.isArray(result.videoIds) ? result.videoIds : []
+    };
+
     nameInput.value = result.voterName;
-    setStatus("드롭다운에서 작품을 골라 최대 3개까지 선택한 뒤 투표를 제출해 주세요.");
+    applySelectedVideoIds(result.videoIds || []);
+    renderStatus();
+    updateFormAvailability();
+    return true;
   } catch (error) {
     if (requestId !== lookupRequestId) {
-      return;
+      return false;
     }
 
-    setStatus("사원번호를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
+    showToast("본인 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
+    return false;
   }
 }
 
 async function submitVote() {
   try {
-    await refreshMeta();
-  } catch (error) {
-    setStatus("서버 상태를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
-    return;
-  }
-
-  if (state.submittedVote) {
-    setStatus("최초 투표 완료 후에는 변경하거나 다시 투표할 수 없습니다.", "warning");
-    return;
-  }
+    const metaResponse = await fetch(`${API_BASE}/meta`);
+    if (metaResponse.ok) {
+      const meta = await metaResponse.json();
+      votingClosed = Boolean(meta.votingClosed);
+    }
+  } catch {}
 
   if (votingClosed) {
-    setStatus("투표가 마감되어 더 이상 참여할 수 없습니다.", "warning");
-    disableForm();
+    renderStatus();
+    updateFormAvailability();
+    showToast("투표가 마감되었습니다.", "warning");
     return;
   }
 
-  const employeeNumber = employeeNumberInput.value.trim();
+  const verified = await verifyVoter();
+  if (!verified) {
+    return;
+  }
+
+  if (state.verifiedVoter.hasVoted) {
+    renderStatus();
+    updateFormAvailability();
+    showToast("이미 투표가 완료된 계정입니다. 제출 후에는 내용을 변경할 수 없습니다.", "warning");
+    return;
+  }
+
   const videoIds = getSelectedVideoIds();
-
-  if (!employeeNumber) {
-    setStatus("사원번호를 입력해 주세요.", "warning");
-    return;
-  }
-
-  if (!state.employeeLookup || state.employeeLookup.employeeNumber !== employeeNumber) {
-    setStatus("등록된 사원번호만 투표할 수 있습니다.", "warning");
-    return;
-  }
-
   if (videoIds.length < 1 || videoIds.length > 3) {
-    setStatus("투표 작품은 최소 1개에서 최대 3개까지 선택할 수 있습니다.", "warning");
+    showToast("최소 1개에서 최대 3개 작품까지 선택해 주세요.", "warning");
     return;
   }
 
@@ -179,37 +230,32 @@ async function submitVote() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        employeeNumber,
+        employeeNumber: state.verifiedVoter.employeeNumber,
+        password: state.verifiedVoter.password,
         videoIds
       })
     });
 
     const result = await response.json();
+
     if (!response.ok) {
-      setStatus(result.message || "투표 처리에 실패했습니다.", "warning");
+      if (response.status === 409) {
+        state.verifiedVoter.hasVoted = true;
+      }
+      renderStatus();
+      updateFormAvailability();
+      showToast(result.message || "투표 제출에 실패했습니다.", "warning");
       return;
     }
 
-    state.submittedVote = {
-      employeeNumber,
-      voterName: result.voterName || nameInput.value,
-      videoIds,
-      submittedAt: result.submittedAt,
-      resetVersion
-    };
-    state.employeeLookup = {
-      employeeNumber,
-      voterName: state.submittedVote.voterName
-    };
-
-    saveSubmittedVote();
-    employeeNumberInput.value = state.submittedVote.employeeNumber;
-    nameInput.value = state.submittedVote.voterName;
+    state.verifiedVoter.hasVoted = true;
+    state.verifiedVoter.videoIds = videoIds;
     applySelectedVideoIds(videoIds);
     renderStatus();
-    toggleFormByVotingState();
+    updateFormAvailability();
+    showToast("투표가 완료되었습니다. 최초 제출 후에는 내용을 변경할 수 없습니다.", "success");
   } catch (error) {
-    setStatus("서버 통신 중 문제가 발생했습니다. 잠시 뒤 다시 시도해 주세요.", "warning");
+    showToast("서버와 통신하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.", "warning");
   }
 }
 
@@ -218,7 +264,7 @@ function renderVoteOptions() {
     { value: "", label: "없음" },
     ...videos.map((video, index) => ({
       value: video.id,
-      label: `${String(index + 1).padStart(2, "0")} · ${video.title}`
+      label: `${String(index + 1).padStart(2, "0")} · ${stripLeadingNumber(video.title)}`
     }))
   ];
 
@@ -252,43 +298,6 @@ function applySelectedVideoIds(videoIds) {
   });
 }
 
-function loadSubmittedVote() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch (error) {
-    return null;
-  }
-}
-
-function saveSubmittedVote() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.submittedVote));
-}
-
-function syncStoredVoteWithResetVersion() {
-  if (!state.submittedVote) {
-    return;
-  }
-
-  if (state.submittedVote.resetVersion !== resetVersion) {
-    state.submittedVote = null;
-    state.employeeLookup = null;
-    localStorage.removeItem(STORAGE_KEY);
-  }
-}
-
-async function refreshMeta() {
-  const response = await fetch(`${API_BASE}/meta`);
-  if (!response.ok) {
-    throw new Error("meta fetch failed");
-  }
-
-  const meta = await response.json();
-  resetVersion = meta.resetVersion || 1;
-  votingClosed = Boolean(meta.votingClosed);
-  syncStoredVoteWithResetVersion();
-  toggleFormByVotingState();
-}
-
 function renderVideoCards() {
   videoGrid.innerHTML = "";
 
@@ -302,7 +311,7 @@ function renderVideoCards() {
     const moreButton = card.querySelector(".video-card__more");
 
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
-    title.textContent = video.title;
+    title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");
     link.href = video.url;
     moreButton.addEventListener("click", () => openDescriptionModal(video));
@@ -360,8 +369,7 @@ function summarizeDescription(text) {
 }
 
 function openDescriptionModal(video) {
-  modalTitle.textContent = video.title;
-  modalSubmitter.textContent = "";
+  modalTitle.textContent = stripLeadingNumber(video.title);
   modalDescription.textContent = video.description || "상세 설명이 없습니다.";
   descriptionModal.hidden = false;
   document.body.style.overflow = "hidden";
@@ -373,62 +381,58 @@ function closeDescriptionModal() {
 }
 
 function renderStatus() {
-  if (state.submittedVote) {
-    const selectedTitles = videos
-      .filter((video) => (state.submittedVote.videoIds || []).includes(video.id))
-      .map((video) => video.title);
-    setStatus(
-      `${state.submittedVote.voterName}님 투표가 저장되었습니다. 선택 작품: ${selectedTitles.join(", ")}`,
-      "success"
-    );
-    return;
-  }
+  voteStatus.className = "status-card status-card--centered";
 
   if (votingClosed) {
-    setStatus("투표가 마감되었습니다.", "warning");
+    voteStatus.textContent = "투표가 마감되었습니다";
+    voteStatus.classList.add("is-warning");
     return;
   }
 
-  setStatus("드롭다운에서 작품을 골라 최소 1개, 최대 3개까지 최초 1회만 투표할 수 있습니다.");
-}
-
-function disableForm() {
-  Array.from(form.elements).forEach((element) => {
-    element.disabled = true;
-  });
-  nameInput.readOnly = true;
-}
-
-function enableForm() {
-  Array.from(form.elements).forEach((element) => {
-    element.disabled = false;
-  });
-  employeeNumberInput.disabled = false;
-  employeeNumberInput.readOnly = false;
-  nameInput.disabled = true;
-  nameInput.readOnly = true;
-}
-
-function toggleFormByVotingState() {
-  if (state.submittedVote || votingClosed) {
-    disableForm();
-    return;
-  }
-
-  enableForm();
-}
-
-function setStatus(message, tone = "") {
-  voteStatus.textContent = message;
-  voteStatus.className = "status-card";
-
-  if (tone === "success") {
+  if (state.verifiedVoter?.hasVoted) {
+    voteStatus.textContent = "투표가 완료되었습니다";
     voteStatus.classList.add("is-success");
+    return;
   }
+
+  voteStatus.textContent = "투표 바랍니다";
+}
+
+function updateFormAvailability() {
+  const canVote = Boolean(state.verifiedVoter) && !state.verifiedVoter.hasVoted && !votingClosed;
+
+  voteSelects.forEach((select) => {
+    select.disabled = !canVote;
+  });
+  submitButton.disabled = !canVote;
+  nameInput.disabled = false;
+  nameInput.readOnly = true;
+}
+
+function showToast(message, tone = "default") {
+  voteToast.textContent = message;
+  voteToast.className = "admin-toast is-visible";
 
   if (tone === "warning") {
-    voteStatus.classList.add("is-warning");
+    voteToast.classList.add("admin-toast--warning");
   }
+
+  if (tone === "success") {
+    voteToast.classList.add("admin-toast--success");
+  }
+
+  window.clearTimeout(showToast.timerId);
+  showToast.timerId = window.setTimeout(() => {
+    voteToast.className = "admin-toast";
+  }, 2600);
+}
+
+function buildCredentialKey(employeeNumber, password) {
+  return `${String(employeeNumber || "").trim()}::${String(password || "").trim()}`;
+}
+
+function stripLeadingNumber(title) {
+  return String(title || "").replace(/^\d+\.\s*/, "");
 }
 
 function escapeHtml(value) {

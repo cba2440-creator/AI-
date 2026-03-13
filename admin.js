@@ -27,6 +27,7 @@ const adminVoteLog = document.querySelector("#admin-vote-log");
 const resetVotesButton = document.querySelector("#reset-votes");
 const closeVotingButton = document.querySelector("#close-voting");
 const openVotingButton = document.querySelector("#open-voting");
+const downloadResultsButton = document.querySelector("#download-results");
 
 let adminPassword = "";
 let isAuthenticated = false;
@@ -75,6 +76,7 @@ videoForm.addEventListener("submit", async (event) => {
 
   const method = videoIdInput.value ? "PUT" : "POST";
   const endpoint = videoIdInput.value ? `${API_BASE}/videos/${videoIdInput.value}` : `${API_BASE}/videos`;
+
   const response = await adminFetch(endpoint, {
     method,
     headers: {
@@ -91,6 +93,7 @@ videoForm.addEventListener("submit", async (event) => {
 
   clearVideoForm();
   setAuthStatus(result.message || "영상이 저장되었습니다.", "success");
+  showToast(result.message || "영상이 저장되었습니다.");
   await loadDashboard();
 });
 
@@ -138,6 +141,29 @@ closeVotingButton.addEventListener("click", async () => {
 
 openVotingButton.addEventListener("click", async () => {
   await updateVotingState("open-voting", "마감 해제되었습니다.");
+});
+
+downloadResultsButton.addEventListener("click", async () => {
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const response = await adminFetch(`${API_BASE}/export-results`);
+  if (!response.ok) {
+    await handleAuthFailure(response);
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "2026-ai-video-awards-results.xlsx";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+  showToast("엑셀 파일을 다운로드했습니다.");
 });
 
 passwordModalClose.addEventListener("click", () => closePasswordModal(null));
@@ -256,17 +282,25 @@ function renderVoteLog(votes, videos) {
     const selectedTitles = normalizeVoteVideoIds(vote)
       .map((videoId) => {
         const found = videos.find((video) => video.id === videoId);
-        return found ? found.title : videoId;
+        return found ? stripLeadingNumber(found.title) : videoId;
       })
       .join(", ");
 
     return `
       <div class="admin-vote-item">
-        <strong>${escapeHtml(vote.employeeNumber)}</strong> · ${escapeHtml(vote.voterName)}
-        <div class="admin-vote-item__meta">선택 작품: ${escapeHtml(selectedTitles)} · ${new Date(vote.submittedAt).toLocaleString("ko-KR")}</div>
+        <div class="admin-vote-item__content">
+          <strong>${escapeHtml(vote.employeeNumber)} · ${escapeHtml(vote.voterName)}</strong>
+          <div class="admin-vote-item__meta">선택 작품: ${escapeHtml(selectedTitles)}</div>
+          <div class="admin-vote-item__meta">${new Date(vote.submittedAt).toLocaleString("ko-KR")}</div>
+        </div>
+        <button class="button button--ghost" type="button" data-delete-vote="${escapeHtml(vote.employeeNumber)}">삭제</button>
       </div>
     `;
   }).join("");
+
+  adminVoteLog.querySelectorAll("[data-delete-vote]").forEach((button) => {
+    button.addEventListener("click", () => deleteVote(button.dataset.deleteVote));
+  });
 }
 
 function normalizeVoteVideoIds(vote) {
@@ -316,6 +350,32 @@ async function deleteVideo(id) {
 
   clearVideoForm();
   setAuthStatus(result.message, "success");
+  showToast(result.message);
+  await loadDashboard();
+}
+
+async function deleteVote(employeeNumber) {
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const confirmed = await requestConfirmation("해당 직원의 투표를 삭제하시겠습니까? 삭제 후에는 다시 투표할 수 있습니다.");
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await adminFetch(`${API_BASE}/votes/${encodeURIComponent(employeeNumber)}`, {
+    method: "DELETE"
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    setAuthStatus(result.message || "개별 투표 삭제에 실패했습니다.", "warning");
+    return;
+  }
+
+  setAuthStatus(result.message, "success");
+  showToast("해당 직원의 투표를 삭제했습니다.");
   await loadDashboard();
 }
 
@@ -377,6 +437,7 @@ function setAdminUIEnabled(enabled) {
   resetVotesButton.disabled = !enabled;
   closeVotingButton.disabled = !enabled;
   openVotingButton.disabled = !enabled;
+  downloadResultsButton.disabled = !enabled;
 }
 
 function showToast(message) {
@@ -468,6 +529,10 @@ function setAuthStatus(message, tone = "") {
   if (tone === "warning") {
     authStatus.classList.add("is-warning");
   }
+}
+
+function stripLeadingNumber(title) {
+  return String(title || "").replace(/^\d+\.\s*/, "");
 }
 
 function escapeHtml(value) {

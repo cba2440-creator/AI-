@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
+const XLSX = require("xlsx");
 
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall2020!";
@@ -27,7 +28,7 @@ ensureDataFiles();
 
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-  const pathname = requestUrl.pathname;
+  const pathname = decodeURIComponent(requestUrl.pathname);
 
   if (pathname === "/api/videos" && request.method === "GET") {
     return sendJson(response, 200, readJson(VIDEOS_PATH));
@@ -90,6 +91,14 @@ const server = http.createServer(async (request, response) => {
     return handleVideoDelete(response, pathname.split("/").pop());
   }
 
+  if (pathname.startsWith("/api/admin/votes/") && request.method === "DELETE") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handleVoteDelete(response, pathname.split("/").pop());
+  }
+
   if (pathname === "/api/admin/reset-votes" && request.method === "POST") {
     if (!isAuthorizedAdmin(request)) {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
@@ -131,6 +140,14 @@ const server = http.createServer(async (request, response) => {
       updatedAt: new Date().toISOString()
     });
     return sendJson(response, 200, { message: "마감 해제되었습니다." });
+  }
+
+  if (pathname === "/api/admin/export-results" && request.method === "GET") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handleExportResults(response);
   }
 
   if (pathname === "/healthz" && request.method === "GET") {
@@ -175,41 +192,50 @@ function defaultVideos() {
   return [
     {
       id: "vision-story",
-      title: "AI로 바뀌는 우리의 하루",
+      title: "01. AI로 바꿔보는 우리의 하루",
       submitter: "김선빈",
-      description: "AI가 만드는 새로운 업무 경험을 소개하는 출품 영상입니다.",
+      description: "AI를 활용한 사내 업무 변화를 소개하는 출품작입니다.",
       type: "youtube",
       url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     },
     {
       id: "work-smarter",
-      title: "더 빠르게, 더 똑똑하게",
-      submitter: "업무혁신TF",
-      description: "업무 자동화와 협업 개선 사례를 담은 AI 홍보 영상입니다.",
+      title: "02. 더 빠르게, 더 똑똑하게",
+      submitter: "이재미",
+      description: "AI 기반 업무 혁신 아이디어를 소개하는 출품작입니다.",
       type: "youtube",
-      url: "https://www.youtube.com/watch?v=ysz5S6PUM-U"
+      url: "https://www.youtube.com/watch?v=LgRp9isEuSo"
     }
   ];
 }
 
 function handleEligibleVoterLookup(response, searchParams) {
   const employeeNumber = sanitizeText(searchParams.get("employeeNumber"));
+  const password = sanitizeText(searchParams.get("password"));
 
-  if (!employeeNumber) {
-    return sendJson(response, 400, { message: "사원번호를 입력해 주세요." });
+  if (!employeeNumber || !password) {
+    return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
   }
 
   const employee = findEmployee(employeeNumber);
-  if (!employee) {
-    return sendJson(response, 404, { message: "등록된 사원번호만 투표할 수 있습니다." });
+  if (!employee || employee.password !== password) {
+    return sendJson(response, 401, { message: "사원번호 또는 비밀번호를 다시 확인해 주세요." });
   }
 
-  return sendJson(response, 200, employee);
+  const vote = findVote(employeeNumber);
+  return sendJson(response, 200, {
+    employeeNumber,
+    voterName: employee.voterName,
+    hasVoted: Boolean(vote),
+    videoIds: vote ? normalizeVoteVideoIds(vote) : [],
+    submittedAt: vote ? vote.submittedAt : null
+  });
 }
 
 function buildResults() {
   const videos = readJson(VIDEOS_PATH);
   const votes = readJson(VOTES_PATH);
+  const employees = readJson(EMPLOYEES_PATH);
   const voteCounts = videos.reduce((accumulator, video) => {
     accumulator[video.id] = 0;
     return accumulator;
@@ -227,7 +253,8 @@ function buildResults() {
   });
 
   return {
-    totalVotes: votes.length,
+    totalVoters: votes.length,
+    totalEligible: employees.length,
     totalSelections,
     voteCounts
   };
@@ -237,6 +264,7 @@ async function handleVote(request, response) {
   try {
     const payload = JSON.parse((await readRequestBody(request)) || "{}");
     const employeeNumber = sanitizeText(payload.employeeNumber);
+    const password = sanitizeText(payload.password);
     const videoIds = Array.isArray(payload.videoIds)
       ? [...new Set(payload.videoIds.map((value) => sanitizeText(value)).filter(Boolean))]
       : [];
@@ -245,12 +273,16 @@ async function handleVote(request, response) {
     const votes = readJson(VOTES_PATH);
     const employee = findEmployee(employeeNumber);
 
-    if (!employeeNumber || videoIds.length < 1 || videoIds.length > 3) {
-      return sendJson(response, 400, { message: "사원번호와 1개에서 3개 사이의 작품을 선택해 주세요." });
+    if (!employeeNumber || !password) {
+      return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
     }
 
-    if (!employee) {
-      return sendJson(response, 403, { message: "등록된 사원번호만 투표할 수 있습니다." });
+    if (videoIds.length < 1 || videoIds.length > 3) {
+      return sendJson(response, 400, { message: "최소 1개에서 최대 3개 작품까지 선택해 주세요." });
+    }
+
+    if (!employee || employee.password !== password) {
+      return sendJson(response, 403, { message: "사원번호 또는 비밀번호를 다시 확인해 주세요." });
     }
 
     if (state.votingClosed) {
@@ -262,7 +294,7 @@ async function handleVote(request, response) {
     }
 
     if (votes.some((vote) => vote.employeeNumber === employeeNumber)) {
-      return sendJson(response, 409, { message: "최초 투표 완료 후에는 변경하거나 다시 투표할 수 없습니다." });
+      return sendJson(response, 409, { message: "최초 제출 후에는 내용을 변경하거나 다시 투표할 수 없습니다." });
     }
 
     const newVote = {
@@ -336,9 +368,92 @@ function handleVideoDelete(response, id) {
   writeJson(VIDEOS_PATH, nextVideos);
   writeJson(
     VOTES_PATH,
-    votes.filter((vote) => !normalizeVoteVideoIds(vote).includes(id))
+    votes
+      .map((vote) => ({
+        ...vote,
+        videoIds: normalizeVoteVideoIds(vote).filter((videoId) => videoId !== id)
+      }))
+      .filter((vote) => vote.videoIds.length > 0)
   );
   return sendJson(response, 200, { message: "영상과 관련 투표가 삭제되었습니다." });
+}
+
+function handleVoteDelete(response, employeeNumber) {
+  const votes = readJson(VOTES_PATH);
+  const nextVotes = votes.filter((vote) => vote.employeeNumber !== employeeNumber);
+
+  if (nextVotes.length === votes.length) {
+    return sendJson(response, 404, { message: "삭제할 투표를 찾지 못했습니다." });
+  }
+
+  writeJson(VOTES_PATH, nextVotes);
+  return sendJson(response, 200, { message: "개별 투표가 삭제되었습니다." });
+}
+
+function handleExportResults(response) {
+  const videos = readJson(VIDEOS_PATH);
+  const votes = readJson(VOTES_PATH);
+  const employees = readJson(EMPLOYEES_PATH);
+  const results = buildResults();
+
+  const summaryRows = [
+    ["구분", "값"],
+    ["총 대상 인원", results.totalEligible],
+    ["투표 완료 인원", results.totalVoters],
+    ["총 선택 수", results.totalSelections],
+    [],
+    ["영상 번호", "작품명", "득표 수", "득표율(%)"]
+  ];
+
+  videos.forEach((video, index) => {
+    const count = results.voteCounts[video.id] || 0;
+    const percentage = results.totalSelections > 0 ? Number(((count / results.totalSelections) * 100).toFixed(2)) : 0;
+    summaryRows.push([String(index + 1).padStart(2, "0"), stripLeadingNumber(video.title), count, percentage]);
+  });
+
+  const voteRows = [
+    ["사원번호", "이름", "선택 1", "선택 2", "선택 3", "제출 시각"]
+  ];
+
+  votes.forEach((vote) => {
+    const selectedTitles = normalizeVoteVideoIds(vote).map((videoId) => {
+      const found = videos.find((video) => video.id === videoId);
+      return found ? stripLeadingNumber(found.title) : videoId;
+    });
+
+    voteRows.push([
+      vote.employeeNumber,
+      vote.voterName,
+      selectedTitles[0] || "",
+      selectedTitles[1] || "",
+      selectedTitles[2] || "",
+      vote.submittedAt
+    ]);
+  });
+
+  const pendingRows = [["사원번호", "이름", "상태"]];
+  const votedEmployeeNumbers = new Set(votes.map((vote) => vote.employeeNumber));
+  employees
+    .filter((employee) => !votedEmployeeNumbers.has(employee.employeeNumber))
+    .forEach((employee) => {
+      pendingRows.push([employee.employeeNumber, employee.voterName, "투표 바랍니다"]);
+    });
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), "결과 요약");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(voteRows), "투표 내역");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(pendingRows), "미투표 현황");
+
+  const buffer = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx"
+  });
+
+  response.writeHead(200, {
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-video-awards-results.xlsx")}"`
+  });
+  response.end(buffer);
 }
 
 function normalizeVideoPayload(payload) {
@@ -415,6 +530,11 @@ function findEmployee(employeeNumber) {
   return employees.find((employee) => employee.employeeNumber === employeeNumber) || null;
 }
 
+function findVote(employeeNumber) {
+  const votes = readJson(VOTES_PATH);
+  return votes.find((vote) => vote.employeeNumber === employeeNumber) || null;
+}
+
 function isAuthorizedAdmin(request) {
   return request.headers["x-admin-password"] === ADMIN_PASSWORD;
 }
@@ -448,4 +568,8 @@ function readRequestBody(request) {
 
 function sanitizeText(value) {
   return String(value || "").trim();
+}
+
+function stripLeadingNumber(title) {
+  return String(title || "").replace(/^\d+\.\s*/, "");
 }
