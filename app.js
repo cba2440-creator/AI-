@@ -396,12 +396,6 @@ function createLaunchButton(video, backgroundImage) {
     currentlyPlayingVideoId = video.id;
     renderVideoCards();
   });
-
-  const badge = document.createElement("span");
-  badge.className = "video-card__launch-badge";
-  badge.textContent = "재생";
-  button.appendChild(badge);
-
   return button;
 }
 
