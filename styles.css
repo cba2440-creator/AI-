@@ -225,6 +225,11 @@ a {
   line-height: 1.6;
 }
 
+.bulk-upload {
+  display: grid;
+  gap: 16px;
+}
+
 .vote-form input,
 .vote-form select,
 .vote-form textarea {

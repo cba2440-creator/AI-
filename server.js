@@ -174,6 +174,22 @@ const server = http.createServer(async (request, response) => {
     return handleExportResults(response);
   }
 
+  if (pathname === "/api/admin/video-import-template" && request.method === "GET") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handleVideoImportTemplate(response);
+  }
+
+  if (pathname === "/api/admin/import-videos" && request.method === "POST") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handleVideoImport(request, response);
+  }
+
   if (pathname === "/api/admin/storage-status" && request.method === "GET") {
     if (!isAuthorizedAdmin(request)) {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
@@ -650,6 +666,115 @@ function handleExportResults(response) {
     "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-video-awards-results.xlsx")}"`
   });
   response.end(buffer);
+}
+
+function handleVideoImportTemplate(response) {
+  const rows = [
+    ["영상 제목", "제출자", "내용", "영상 링크"],
+    ["01. 샘플 영상", "홍길동", "영상 설명을 입력합니다.", "https://www.youtube.com/watch?v=example"]
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "영상등록양식");
+
+  const buffer = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx"
+  });
+
+  response.writeHead(200, {
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-video-import-template.xlsx")}"`
+  });
+  response.end(buffer);
+}
+
+function handleVideoImport(request, response) {
+  const busboy = Busboy({ headers: request.headers });
+  const chunks = [];
+  let hasFile = false;
+  let uploadError = null;
+
+  busboy.on("file", (fieldName, file, info) => {
+    if (fieldName !== "videoSheet") {
+      file.resume();
+      return;
+    }
+
+    hasFile = true;
+    const extension = path.extname(info.filename || "").toLowerCase();
+    if (![".xlsx", ".xls"].includes(extension)) {
+      uploadError = "엑셀 파일(.xlsx, .xls)만 업로드할 수 있습니다.";
+      file.resume();
+      return;
+    }
+
+    file.on("data", (chunk) => chunks.push(chunk));
+  });
+
+  busboy.on("finish", () => {
+    if (uploadError) {
+      return sendJson(response, 400, { message: uploadError });
+    }
+
+    if (!hasFile || !chunks.length) {
+      return sendJson(response, 400, { message: "업로드할 엑셀 파일을 선택해 주세요." });
+    }
+
+    try {
+      const workbook = XLSX.read(Buffer.concat(chunks), { type: "buffer" });
+      const firstSheetName = workbook.SheetNames[0];
+      const firstSheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+      if (!rows.length) {
+        return sendJson(response, 400, { message: "엑셀 파일에 등록할 영상 정보가 없습니다." });
+      }
+
+      const videos = readJson(VIDEOS_PATH);
+      const importedVideos = [];
+
+      for (const row of rows) {
+        const payload = normalizeVideoPayload({
+          title: row["영상 제목"] || row.title || row["제목"],
+          submitter: row["제출자"] || row.submitter,
+          description: row["내용"] || row.description,
+          type: "youtube",
+          url: row["영상 링크"] || row.url || row["유튜브 링크"]
+        });
+
+        if (!payload) {
+          continue;
+        }
+
+        const video = {
+          id: createVideoId(payload.title, videos),
+          ...payload,
+          localVideoUrl: ""
+        };
+
+        videos.push(video);
+        importedVideos.push(video);
+      }
+
+      if (!importedVideos.length) {
+        return sendJson(response, 400, {
+          message: "유효한 행이 없습니다. 열 이름은 영상 제목, 제출자, 내용, 영상 링크로 맞춰주세요."
+        });
+      }
+
+      writeJson(VIDEOS_PATH, videos);
+      return sendJson(response, 201, {
+        message: `${importedVideos.length}개의 영상이 일괄 등록되었습니다.`,
+        count: importedVideos.length,
+        videos: importedVideos
+      });
+    } catch (error) {
+      return sendJson(response, 400, { message: "엑셀 파일을 읽는 중 오류가 발생했습니다." });
+    }
+  });
+
+  request.pipe(busboy);
 }
 
 function handleRestoreLatestVideosBackup(response) {

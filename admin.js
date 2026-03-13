@@ -24,6 +24,9 @@ const descriptionInput = document.querySelector("#video-description");
 const urlInput = document.querySelector("#video-url");
 const videoFileInput = document.querySelector("#video-file");
 const videoFormResetButton = document.querySelector("#video-form-reset");
+const downloadVideoTemplateButton = document.querySelector("#download-video-template");
+const videoBulkForm = document.querySelector("#video-bulk-form");
+const videoBulkFileInput = document.querySelector("#video-bulk-file");
 const adminVideoList = document.querySelector("#admin-video-list");
 const adminResults = document.querySelector("#admin-results");
 const adminVoteLog = document.querySelector("#admin-vote-log");
@@ -127,6 +130,64 @@ videoForm.addEventListener("submit", async (event) => {
 videoFormResetButton.addEventListener("click", () => {
   clearVideoForm();
   setAuthStatus("입력 내용이 초기화되었습니다.");
+});
+
+downloadVideoTemplateButton?.addEventListener("click", async () => {
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const response = await adminFetch(`${API_BASE}/video-import-template`);
+  if (!response.ok) {
+    await handleAuthFailure(response);
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "2026-ai-video-import-template.xlsx";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+  showToast("엑셀 양식이 다운로드되었습니다.");
+});
+
+videoBulkForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const file = videoBulkFileInput?.files?.[0];
+  if (!file) {
+    setAuthStatus("업로드할 엑셀 파일을 선택해 주세요.", "warning");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("videoSheet", file);
+
+  const response = await fetch(`${API_BASE}/import-videos`, {
+    method: "POST",
+    headers: {
+      "x-admin-password": adminPassword
+    },
+    body: formData
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    setAuthStatus(result.message || "엑셀 일괄 등록에 실패했습니다.", "warning");
+    return;
+  }
+
+  videoBulkForm.reset();
+  setAuthStatus(result.message || "엑셀 일괄 등록이 완료되었습니다.", "success");
+  showToast(result.message || "엑셀 일괄 등록이 완료되었습니다.");
+  await loadDashboard();
 });
 
 resetVotesButton.addEventListener("click", async () => {
@@ -464,6 +525,14 @@ function setAdminUIEnabled(enabled) {
   Array.from(videoForm.elements).forEach((element) => {
     element.disabled = !enabled;
   });
+  if (videoBulkForm) {
+    Array.from(videoBulkForm.elements).forEach((element) => {
+      element.disabled = !enabled;
+    });
+  }
+  if (downloadVideoTemplateButton) {
+    downloadVideoTemplateButton.disabled = !enabled;
+  }
   resetVotesButton.disabled = !enabled;
   closeVotingButton.disabled = !enabled;
   openVotingButton.disabled = !enabled;
