@@ -314,6 +314,7 @@ function renderVideoCards() {
     const moreButton = card.querySelector(".video-card__more");
 
     indexBadge.textContent = String(index + 1);
+    indexBadge.hidden = currentlyPlayingVideoId === video.id;
     topline.textContent = `ENTRY ${String(index + 1).padStart(2, "0")} · YOUTUBE`;
     title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeDescription(video.description || "YouTube 링크로 등록된 출품 영상입니다.");
