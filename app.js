@@ -375,7 +375,32 @@ function createMediaElement(video) {
 }
 
 function getYoutubeId(url) {
-  const match = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/i);
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const host = parsedUrl.hostname.replace(/^www\./i, "");
+    const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+
+    if (host === "youtu.be" && pathParts[0]) {
+      return pathParts[0];
+    }
+
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      if (parsedUrl.pathname === "/watch") {
+        return parsedUrl.searchParams.get("v");
+      }
+
+      if ((pathParts[0] === "embed" || pathParts[0] === "shorts") && pathParts[1]) {
+        return pathParts[1];
+      }
+    }
+  } catch {}
+
+  const match = rawUrl.match(/(?:youtu\.be\/|youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/i);
   return match ? match[1] : null;
 }
 
