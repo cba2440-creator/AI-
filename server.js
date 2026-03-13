@@ -14,9 +14,10 @@ const CONFIGURED_DATA_DIR =
   process.env.DATA_DIR ||
   process.env.RENDER_DISK_MOUNT_PATH ||
   (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR);
-const DATA_DIR = path.isAbsolute(CONFIGURED_DATA_DIR)
+const REQUESTED_DATA_DIR = path.isAbsolute(CONFIGURED_DATA_DIR)
   ? CONFIGURED_DATA_DIR
   : path.join(ROOT, CONFIGURED_DATA_DIR);
+const DATA_DIR = resolveWritableDataDir(REQUESTED_DATA_DIR);
 const VIDEOS_PATH = path.join(DATA_DIR, "videos.json");
 const VOTES_PATH = path.join(DATA_DIR, "votes.json");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
@@ -252,6 +253,31 @@ function ensureDataFiles() {
   if (!fs.existsSync(MEDIA_DIR)) {
     fs.mkdirSync(MEDIA_DIR, { recursive: true });
   }
+}
+
+function resolveWritableDataDir(preferredPath) {
+  const candidates = [preferredPath];
+
+  if (preferredPath !== DEFAULT_LOCAL_DATA_DIR) {
+    candidates.push(DEFAULT_LOCAL_DATA_DIR);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.R_OK | fs.constants.W_OK);
+
+      if (candidate !== preferredPath) {
+        console.warn(`기본 데이터 경로를 사용할 수 없어 로컬 경로로 전환합니다: ${preferredPath} -> ${candidate}`);
+      }
+
+      return candidate;
+    } catch (error) {
+      console.warn(`데이터 경로 준비 실패: ${candidate}`, error.code || error.message);
+    }
+  }
+
+  throw new Error(`사용 가능한 데이터 경로를 준비하지 못했습니다. preferred=${preferredPath}`);
 }
 
 function defaultVideos() {
