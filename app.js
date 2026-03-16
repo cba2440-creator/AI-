@@ -237,8 +237,8 @@ async function submitVote() {
   }
 
   const videoIds = getSelectedVideoIds();
-  if (videoIds.length < 1 || videoIds.length > 3) {
-    showToast("최소 1개에서 최대 3개 작품까지 선택해 주세요.", "warning");
+  if (videoIds.length !== 2) {
+    showToast("반드시 서로 다른 2개 작품을 선택해 주세요.", "warning");
     return;
   }
 

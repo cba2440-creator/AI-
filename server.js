@@ -413,8 +413,8 @@ async function handleVote(request, response) {
       return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
     }
 
-    if (videoIds.length < 1 || videoIds.length > 3) {
-      return sendJson(response, 400, { message: "최소 1개에서 최대 3개 작품까지 선택해 주세요." });
+    if (videoIds.length !== 2) {
+      return sendJson(response, 400, { message: "반드시 서로 다른 2개 작품을 선택해 주세요." });
     }
 
     if (!employee || employee.password !== password) {
@@ -624,7 +624,7 @@ function handleExportResults(response) {
   });
 
   const voteRows = [
-    ["사원번호", "이름", "선택 1", "선택 2", "선택 3", "제출 시각"]
+    ["사원번호", "이름", "선택 1", "선택 2", "제출 시각"]
   ];
 
   votes.forEach((vote) => {
@@ -638,7 +638,6 @@ function handleExportResults(response) {
       vote.voterName,
       selectedTitles[0] || "",
       selectedTitles[1] || "",
-      selectedTitles[2] || "",
       vote.submittedAt
     ]);
   });
