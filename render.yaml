@@ -14,3 +14,5 @@ services:
     envVars:
       - key: DATA_DIR
         value: /var/data/ai-promotion-awards
+      - key: REQUIRE_PERSISTENT_DATA
+        value: "true"

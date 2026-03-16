@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const { URL } = require("url");
 const XLSX = require("xlsx");
 const Busboy = require("busboy");
@@ -10,14 +11,29 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall2020!";
 const ROOT = __dirname;
 const DEFAULT_RENDER_DATA_DIR = "/var/data/ai-promotion-awards";
 const DEFAULT_LOCAL_DATA_DIR = path.join(ROOT, "data");
+const DATABASE_URL = String(process.env.DATABASE_URL || "").trim();
+const USE_DATABASE_STORAGE = Boolean(DATABASE_URL);
+const REQUIRE_PERSISTENT_DATA =
+  String(
+    process.env.REQUIRE_PERSISTENT_DATA ??
+      (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? "true" : "false")
+  ).toLowerCase() === "true";
 const CONFIGURED_DATA_DIR =
-  process.env.DATA_DIR ||
-  process.env.RENDER_DISK_MOUNT_PATH ||
-  (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR);
+  USE_DATABASE_STORAGE
+    ? DEFAULT_LOCAL_DATA_DIR
+    : (
+      process.env.DATA_DIR ||
+      process.env.RENDER_DISK_MOUNT_PATH ||
+      (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR)
+    );
 const REQUESTED_DATA_DIR = path.isAbsolute(CONFIGURED_DATA_DIR)
   ? CONFIGURED_DATA_DIR
   : path.join(ROOT, CONFIGURED_DATA_DIR);
 const DATA_DIR = resolveWritableDataDir(REQUESTED_DATA_DIR);
+const USING_FALLBACK_DATA_DIR = DATA_DIR !== REQUESTED_DATA_DIR;
+if (!USE_DATABASE_STORAGE && REQUIRE_PERSISTENT_DATA && USING_FALLBACK_DATA_DIR) {
+  throw new Error(`Persistent writable data storage is required. requested=${REQUESTED_DATA_DIR} actual=${DATA_DIR}`);
+}
 const VIDEOS_PATH = path.join(DATA_DIR, "videos.json");
 const VOTES_PATH = path.join(DATA_DIR, "votes.json");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
@@ -27,6 +43,16 @@ const BACKUP_DIR = path.join(DATA_DIR, "backups");
 const MEDIA_BACKUP_DIR = path.join(BACKUP_DIR, "uploads");
 const JSON_BACKUP_RETENTION = 40;
 const MEDIA_BACKUP_RETENTION = 20;
+const STORAGE_KEY_BY_PATH = new Map();
+const databaseState = {
+  initialized: false,
+  cache: {
+    videos: null,
+    votes: null,
+    state: null,
+    employees: null
+  }
+};
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -38,7 +64,12 @@ const MIME_TYPES = {
   ".svg": "image/svg+xml; charset=utf-8"
 };
 
-ensureDataFiles();
+STORAGE_KEY_BY_PATH.set(VIDEOS_PATH, "videos");
+STORAGE_KEY_BY_PATH.set(VOTES_PATH, "votes");
+STORAGE_KEY_BY_PATH.set(STATE_PATH, "state");
+STORAGE_KEY_BY_PATH.set(EMPLOYEES_PATH, "employees");
+
+initializeStorage();
 
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
@@ -271,6 +302,69 @@ function ensureDataFiles() {
   }
 }
 
+function initializeStorage() {
+  if (USE_DATABASE_STORAGE) {
+    ensureSupportDirectories();
+    initializeDatabaseStorage();
+    return;
+  }
+
+  ensureDataFiles();
+}
+
+function ensureSupportDirectories() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(BACKUP_DIR)) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(MEDIA_BACKUP_DIR)) {
+    fs.mkdirSync(MEDIA_BACKUP_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(MEDIA_DIR)) {
+    fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  }
+}
+
+function initializeDatabaseStorage() {
+  const loaded = runDatabaseStorageProcess("loadAll");
+  const hasStoredData = loaded && Object.keys(loaded).length > 0;
+  const initialData = hasStoredData
+    ? loaded
+    : {
+      videos: readBundledJsonOrDefault(VIDEOS_PATH, defaultVideos()),
+      votes: readBundledJsonOrDefault(VOTES_PATH, []),
+      state: readBundledJsonOrDefault(STATE_PATH, {
+        resetVersion: 1,
+        updatedAt: new Date().toISOString(),
+        votingClosed: false
+      }),
+      employees: readBundledJsonOrDefault(EMPLOYEES_PATH, [])
+    };
+
+  databaseState.cache.videos = cloneJson(initialData.videos || defaultVideos());
+  databaseState.cache.votes = cloneJson(initialData.votes || []);
+  databaseState.cache.state = cloneJson(initialData.state || {
+    resetVersion: 1,
+    updatedAt: new Date().toISOString(),
+    votingClosed: false
+  });
+  databaseState.cache.employees = cloneJson(initialData.employees || []);
+
+  if (!hasStoredData) {
+    persistDatabasePayload("videos", databaseState.cache.videos);
+    persistDatabasePayload("votes", databaseState.cache.votes);
+    persistDatabasePayload("state", databaseState.cache.state);
+    persistDatabasePayload("employees", databaseState.cache.employees);
+  }
+
+  databaseState.initialized = true;
+}
+
 function resolveWritableDataDir(preferredPath) {
   const candidates = [preferredPath];
 
@@ -343,6 +437,16 @@ function migrateBundledDataIfNeeded() {
   if (!fs.existsSync(EMPLOYEES_PATH) && fs.existsSync(bundledEmployeesPath)) {
     fs.copyFileSync(bundledEmployeesPath, EMPLOYEES_PATH);
   }
+}
+
+function readBundledJsonOrDefault(filePath, fallbackValue) {
+  try {
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    }
+  } catch {}
+
+  return cloneJson(fallbackValue);
 }
 
 function handleEligibleVoterLookup(response, searchParams) {
@@ -910,10 +1014,30 @@ function isAuthorizedAdmin(request) {
 }
 
 function readJson(filePath) {
+  if (USE_DATABASE_STORAGE) {
+    const storageKey = STORAGE_KEY_BY_PATH.get(filePath);
+    if (!storageKey) {
+      throw new Error(`Unsupported storage path in database mode: ${filePath}`);
+    }
+    return cloneJson(databaseState.cache[storageKey]);
+  }
+
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function writeJson(filePath, payload) {
+  if (USE_DATABASE_STORAGE) {
+    const storageKey = STORAGE_KEY_BY_PATH.get(filePath);
+    if (!storageKey) {
+      throw new Error(`Unsupported storage path in database mode: ${filePath}`);
+    }
+
+    const nextPayload = cloneJson(payload);
+    databaseState.cache[storageKey] = nextPayload;
+    persistDatabasePayload(storageKey, nextPayload);
+    return;
+  }
+
   const nextContent = JSON.stringify(payload, null, 2);
   const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
 
@@ -964,6 +1088,10 @@ function safelyDeleteFile(filePath) {
 }
 
 function createJsonBackup(filePath, content) {
+  if (USE_DATABASE_STORAGE) {
+    return;
+  }
+
   try {
     const baseName = path.basename(filePath, path.extname(filePath));
     const stamp = createBackupStamp();
@@ -977,6 +1105,10 @@ function createJsonBackup(filePath, content) {
 }
 
 function listJsonBackups(baseName) {
+  if (USE_DATABASE_STORAGE) {
+    return [];
+  }
+
   try {
     return fs.readdirSync(BACKUP_DIR)
       .filter((name) => name.startsWith(`${baseName}-`) && name.endsWith(".json") && name !== `${baseName}-latest.json`)
@@ -1033,8 +1165,14 @@ function createBackupStamp() {
 
 function getStorageStatus() {
   return {
+    storageMode: USE_DATABASE_STORAGE ? "database" : "json",
+    requestedDataDir: REQUESTED_DATA_DIR,
     dataDir: DATA_DIR,
+    usingFallbackDataDir: USING_FALLBACK_DATA_DIR,
     usingRenderDiskPath: DATA_DIR === DEFAULT_RENDER_DATA_DIR,
+    persistentReady: USE_DATABASE_STORAGE || !REQUIRE_PERSISTENT_DATA || !USING_FALLBACK_DATA_DIR,
+    databaseStorageEnabled: USE_DATABASE_STORAGE,
+    databaseInitialized: USE_DATABASE_STORAGE ? databaseState.initialized : false,
     videosExists: fs.existsSync(VIDEOS_PATH),
     votesExists: fs.existsSync(VOTES_PATH),
     stateExists: fs.existsSync(STATE_PATH),
@@ -1042,4 +1180,99 @@ function getStorageStatus() {
     mediaDirExists: fs.existsSync(MEDIA_DIR),
     backupDirExists: fs.existsSync(BACKUP_DIR)
   };
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function persistDatabasePayload(storageKey, payload) {
+  runDatabaseStorageProcess("save", {
+    storageKey,
+    value: payload
+  });
+}
+
+function runDatabaseStorageProcess(operation, payload = {}) {
+  const helperScript = `
+    const { Client } = require("pg");
+
+    async function main() {
+      const connectionString = process.env.DATABASE_URL;
+      if (!connectionString) {
+        throw new Error("DATABASE_URL is required");
+      }
+
+      const useSsl = String(process.env.DATABASE_SSL || "").toLowerCase() === "true"
+        || String(process.env.PGSSLMODE || "").toLowerCase() === "require"
+        || connectionString.includes("render.com");
+
+      const client = new Client({
+        connectionString,
+        ssl: useSsl ? { rejectUnauthorized: false } : false
+      });
+
+      await client.connect();
+      await client.query(
+        "create table if not exists app_json_store (" +
+        "storage_key text primary key," +
+        "value jsonb not null," +
+        "updated_at timestamptz not null default now()" +
+        ")"
+      );
+
+      const operation = process.env.DB_STORAGE_OPERATION;
+      if (operation === "loadAll") {
+        const result = await client.query("select storage_key, value from app_json_store");
+        const payload = {};
+        for (const row of result.rows) {
+          payload[row.storage_key] = row.value;
+        }
+        process.stdout.write(JSON.stringify(payload));
+      } else if (operation === "save") {
+        const storageKey = process.env.DB_STORAGE_KEY;
+        const value = JSON.parse(process.env.DB_STORAGE_VALUE || "null");
+        await client.query(
+          "insert into app_json_store (storage_key, value, updated_at) values ($1, $2::jsonb, now()) " +
+          "on conflict (storage_key) do update set value = excluded.value, updated_at = now()",
+          [storageKey, JSON.stringify(value)]
+        );
+        process.stdout.write("{\\"ok\\":true}");
+      } else {
+        throw new Error("Unsupported DB storage operation");
+      }
+
+      await client.end();
+    }
+
+    main().catch(async (error) => {
+      try {}
+      finally {
+        console.error(error && error.stack ? error.stack : String(error));
+        process.exit(1);
+      }
+    });
+  `;
+
+  const env = {
+    ...process.env,
+    DB_STORAGE_OPERATION: operation
+  };
+
+  if (payload.storageKey) {
+    env.DB_STORAGE_KEY = payload.storageKey;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "value")) {
+    env.DB_STORAGE_VALUE = JSON.stringify(payload.value);
+  }
+
+  const output = execFileSync(process.execPath, ["-e", helperScript], {
+    cwd: ROOT,
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  return output ? JSON.parse(output) : null;
 }
