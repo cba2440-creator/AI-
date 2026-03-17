@@ -533,8 +533,8 @@ async function handleVote(request, response) {
       return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
     }
 
-    if (videoIds.length !== 2) {
-      return sendJson(response, 400, { message: "반드시 서로 다른 2개 작품을 선택해 주세요." });
+    if (videoIds.length !== 1) {
+      return sendJson(response, 400, { message: "반드시 작품 1개를 선택해 주세요." });
     }
 
     if (!employee || employee.password !== password) {
@@ -769,7 +769,7 @@ function handleExportResults(response) {
   });
 
   const voteRows = [
-    ["사원번호", "이름", "선택 1", "선택 2", "제출 시각"]
+    ["사원번호", "이름", "선택 1", "제출 시각"]
   ];
   const videoNumberById = new Map(
     videos.map((video, index) => [video.id, String(index + 1).padStart(2, "0")])
@@ -784,7 +784,6 @@ function handleExportResults(response) {
       vote.employeeNumber,
       vote.voterName,
       selectedNumbers[0] || "",
-      selectedNumbers[1] || "",
       vote.submittedAt
     ]);
   });
@@ -1362,15 +1361,34 @@ function runDatabaseStorageProcess(operation, payload = {}) {
   const helperScript = `
     const { Client } = require("pg");
 
+    function shouldUseSsl(connectionString) {
+      const explicitSsl = String(process.env.DATABASE_SSL || "").toLowerCase();
+      const pgSslMode = String(process.env.PGSSLMODE || "").toLowerCase();
+
+      if (explicitSsl === "true" || pgSslMode === "require") {
+        return true;
+      }
+
+      if (explicitSsl === "false" || pgSslMode === "disable") {
+        return false;
+      }
+
+      try {
+        const parsed = new URL(connectionString);
+        const hostname = String(parsed.hostname || "").toLowerCase();
+        return hostname !== "localhost" && hostname !== "127.0.0.1";
+      } catch {
+        return connectionString.includes("render.com") || connectionString.includes("supabase.co");
+      }
+    }
+
     async function main() {
       const connectionString = process.env.DATABASE_URL;
       if (!connectionString) {
         throw new Error("DATABASE_URL is required");
       }
 
-      const useSsl = String(process.env.DATABASE_SSL || "").toLowerCase() === "true"
-        || String(process.env.PGSSLMODE || "").toLowerCase() === "require"
-        || connectionString.includes("render.com");
+      const useSsl = shouldUseSsl(connectionString);
 
       const client = new Client({
         connectionString,

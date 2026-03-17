@@ -67,10 +67,6 @@ employeePasswordInput.addEventListener("input", handleCredentialInput);
   });
 });
 
-voteSelects.forEach((select) => {
-  select.addEventListener("change", () => enforceUniqueSelections(select));
-});
-
 modalCloseButton.addEventListener("click", closeDescriptionModal);
 descriptionModal.addEventListener("click", (event) => {
   if (event.target instanceof HTMLElement && event.target.dataset.closeModal === "true") {
@@ -237,8 +233,8 @@ async function submitVote() {
   }
 
   const videoIds = getSelectedVideoIds();
-  if (videoIds.length !== 2) {
-    showToast("반드시 서로 다른 2개 작품을 선택해 주세요.", "warning");
+  if (videoIds.length !== 1) {
+    showToast("반드시 작품 1개를 선택해 주세요.", "warning");
     return;
   }
 
@@ -291,19 +287,6 @@ function renderVoteOptions() {
     select.innerHTML = options
       .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
       .join("");
-  });
-}
-
-function enforceUniqueSelections(changedSelect) {
-  const value = changedSelect.value;
-  if (!value) {
-    return;
-  }
-
-  voteSelects.forEach((select) => {
-    if (select !== changedSelect && select.value === value) {
-      select.value = "";
-    }
   });
 }
 
