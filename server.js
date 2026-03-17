@@ -730,18 +730,20 @@ function handleExportResults(response) {
   const voteRows = [
     ["사원번호", "이름", "선택 1", "선택 2", "제출 시각"]
   ];
+  const videoNumberById = new Map(
+    videos.map((video, index) => [video.id, String(index + 1).padStart(2, "0")])
+  );
 
   votes.forEach((vote) => {
-    const selectedTitles = normalizeVoteVideoIds(vote).map((videoId) => {
-      const found = videos.find((video) => video.id === videoId);
-      return found ? stripLeadingNumber(found.title) : videoId;
+    const selectedNumbers = normalizeVoteVideoIds(vote).map((videoId) => {
+      return videoNumberById.get(videoId) || videoId;
     });
 
     voteRows.push([
       vote.employeeNumber,
       vote.voterName,
-      selectedTitles[0] || "",
-      selectedTitles[1] || "",
+      selectedNumbers[0] || "",
+      selectedNumbers[1] || "",
       vote.submittedAt
     ]);
   });
