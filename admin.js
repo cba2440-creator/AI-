@@ -372,10 +372,10 @@ async function loadDashboard() {
 }
 
 function renderVideoList(videos) {
-  adminVideoList.innerHTML = videos.map((video) => `
+  adminVideoList.innerHTML = videos.map((video, index) => `
     <article class="admin-video-card">
       <div>
-        <strong>${escapeHtml(video.title)}</strong>
+        <strong>${escapeHtml(formatVideoLabel(video, index))}</strong>
         <div class="admin-video-card__meta">${escapeHtml(video.submitter)}</div>
         <div class="admin-video-card__meta">${escapeHtml(video.description)}</div>
         <div class="admin-video-card__link">${escapeHtml(video.url)}</div>
@@ -405,13 +405,13 @@ function renderVideoList(videos) {
 function renderResults(results, videos) {
   const totalSelections = results.totalSelections || 0;
 
-  adminResults.innerHTML = videos.map((video) => {
+  adminResults.innerHTML = videos.map((video, index) => {
     const count = results.voteCounts[video.id] || 0;
     const percentage = totalSelections > 0 ? Math.round((count / totalSelections) * 100) : 0;
     return `
       <div class="result-item">
         <div class="result-item__header">
-          <div class="result-item__title">${escapeHtml(video.title)}</div>
+          <div class="result-item__title">${escapeHtml(formatVideoLabel(video, index))}</div>
           <div class="result-item__count">${count}표 · ${percentage}%</div>
         </div>
         <div class="result-item__bar">
@@ -428,11 +428,12 @@ function renderVoteLog(votes, videos) {
     return;
   }
 
+  const videoIndexById = new Map(videos.map((video, index) => [video.id, index]));
   adminVoteLog.innerHTML = votes.map((vote) => {
     const selectedTitles = normalizeVoteVideoIds(vote)
       .map((videoId) => {
         const found = videos.find((video) => video.id === videoId);
-        return found ? stripLeadingNumber(found.title) : videoId;
+        return found ? formatVideoLabel(found, videoIndexById.get(videoId) ?? 0) : videoId;
       })
       .join(", ");
 
@@ -701,6 +702,10 @@ function setAuthStatus(message, tone = "") {
 
 function stripLeadingNumber(title) {
   return String(title || "").replace(/^\d+\.\s*/, "");
+}
+
+function formatVideoLabel(video, index) {
+  return `${String(index + 1).padStart(2, "0")}. ${stripLeadingNumber(video.title)}`;
 }
 
 function restoreAdminSession() {
