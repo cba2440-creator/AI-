@@ -134,6 +134,23 @@
           </form>
         </div>
       </section>
+      <section class="panel">
+        <div class="panel__heading">
+          <h2>직원 명단 엑셀 등록</h2>
+          <p>양식 파일을 업로드하면 기존 로그인 대상자 전체를 엑셀 내용으로 덮어씁니다.</p>
+        </div>
+        <div class="bulk-upload">
+          <button id="download-employee-template" type="button" class="button button--ghost">직원 양식 다운로드</button>
+          <form id="employee-bulk-form" class="vote-form">
+            <label>
+              <span>업로드할 엑셀 파일</span>
+              <input id="employee-bulk-file" type="file" accept=".xlsx,.xls" required>
+            </label>
+            <p class="form-hint">열 이름은 사원번호, 이름, 비밀번호 (휴대폰 뒷자리)로 맞춰주세요.</p>
+            <button type="submit" class="button button--primary">직원 명단 덮어쓰기 등록</button>
+          </form>
+        </div>
+      </section>
     </main>
 
     <section class="panel panel--gallery">

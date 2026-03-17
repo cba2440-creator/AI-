@@ -27,6 +27,9 @@ const videoFormResetButton = document.querySelector("#video-form-reset");
 const downloadVideoTemplateButton = document.querySelector("#download-video-template");
 const videoBulkForm = document.querySelector("#video-bulk-form");
 const videoBulkFileInput = document.querySelector("#video-bulk-file");
+const downloadEmployeeTemplateButton = document.querySelector("#download-employee-template");
+const employeeBulkForm = document.querySelector("#employee-bulk-form");
+const employeeBulkFileInput = document.querySelector("#employee-bulk-file");
 const adminVideoList = document.querySelector("#admin-video-list");
 const adminResults = document.querySelector("#admin-results");
 const adminVoteLog = document.querySelector("#admin-vote-log");
@@ -187,6 +190,64 @@ videoBulkForm?.addEventListener("submit", async (event) => {
   videoBulkForm.reset();
   setAuthStatus(result.message || "엑셀 덮어쓰기 등록이 완료되었습니다.", "success");
   showToast(result.message || "엑셀 덮어쓰기 등록이 완료되었습니다.");
+  await loadDashboard();
+});
+
+downloadEmployeeTemplateButton?.addEventListener("click", async () => {
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const response = await adminFetch(`${API_BASE}/employee-import-template`);
+  if (!response.ok) {
+    await handleAuthFailure(response);
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "2026-ai-employee-import-template.xlsx";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+  showToast("직원 양식이 다운로드되었습니다.");
+});
+
+employeeBulkForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const file = employeeBulkFileInput?.files?.[0];
+  if (!file) {
+    setAuthStatus("업로드할 엑셀 파일을 선택해 주세요.", "warning");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("employeeSheet", file);
+
+  const response = await fetch(`${API_BASE}/import-employees`, {
+    method: "POST",
+    headers: {
+      "x-admin-password": adminPassword
+    },
+    body: formData
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    setAuthStatus(result.message || "직원 명단 덮어쓰기 등록에 실패했습니다.", "warning");
+    return;
+  }
+
+  employeeBulkForm.reset();
+  setAuthStatus(result.message || "직원 명단 덮어쓰기 등록이 완료되었습니다.", "success");
+  showToast(result.message || "직원 명단 덮어쓰기 등록이 완료되었습니다.");
   await loadDashboard();
 });
 
@@ -532,6 +593,14 @@ function setAdminUIEnabled(enabled) {
   }
   if (downloadVideoTemplateButton) {
     downloadVideoTemplateButton.disabled = !enabled;
+  }
+  if (employeeBulkForm) {
+    Array.from(employeeBulkForm.elements).forEach((element) => {
+      element.disabled = !enabled;
+    });
+  }
+  if (downloadEmployeeTemplateButton) {
+    downloadEmployeeTemplateButton.disabled = !enabled;
   }
   resetVotesButton.disabled = !enabled;
   closeVotingButton.disabled = !enabled;

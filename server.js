@@ -221,6 +221,22 @@ const server = http.createServer(async (request, response) => {
     return handleVideoImport(request, response);
   }
 
+  if (pathname === "/api/admin/employee-import-template" && request.method === "GET") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "愿由ъ옄 鍮꾨?踰덊샇媛 ?щ컮瑜댁? ?딆뒿?덈떎." });
+    }
+
+    return handleEmployeeImportTemplate(response);
+  }
+
+  if (pathname === "/api/admin/import-employees" && request.method === "POST") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "愿由ъ옄 鍮꾨?踰덊샇媛 ?щ컮瑜댁? ?딆뒿?덈떎." });
+    }
+
+    return handleEmployeeImport(request, response);
+  }
+
   if (pathname === "/api/admin/storage-status" && request.method === "GET") {
     if (!isAuthorizedAdmin(request)) {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
@@ -794,6 +810,27 @@ function handleVideoImportTemplate(response) {
   response.end(buffer);
 }
 
+function handleEmployeeImportTemplate(response) {
+  const rows = [
+    ["사원번호", "이름", "비밀번호 (휴대폰 뒷자리)"],
+    ["180012", "김선빈", "1234"]
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "직원명단양식");
+
+  const buffer = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx"
+  });
+
+  response.writeHead(200, {
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-employee-import-template.xlsx")}"`
+  });
+  response.end(buffer);
+}
+
 function handleVideoImport(request, response) {
   const busboy = Busboy({ headers: request.headers });
   const chunks = [];
@@ -887,6 +924,95 @@ function handleVideoImport(request, response) {
   request.pipe(busboy);
 }
 
+function handleEmployeeImport(request, response) {
+  const busboy = Busboy({ headers: request.headers });
+  const chunks = [];
+  let hasFile = false;
+  let uploadError = null;
+
+  busboy.on("file", (fieldName, file, info) => {
+    if (fieldName !== "employeeSheet") {
+      file.resume();
+      return;
+    }
+
+    hasFile = true;
+    const extension = path.extname(info.filename || "").toLowerCase();
+    if (![".xlsx", ".xls"].includes(extension)) {
+      uploadError = "엑셀 파일(.xlsx, .xls)만 업로드할 수 있습니다.";
+      file.resume();
+      return;
+    }
+
+    file.on("data", (chunk) => chunks.push(chunk));
+  });
+
+  busboy.on("finish", () => {
+    if (uploadError) {
+      return sendJson(response, 400, { message: uploadError });
+    }
+
+    if (!hasFile || !chunks.length) {
+      return sendJson(response, 400, { message: "업로드할 엑셀 파일을 선택해 주세요." });
+    }
+
+    try {
+      const workbook = XLSX.read(Buffer.concat(chunks), { type: "buffer" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+      if (!rows.length) {
+        return sendJson(response, 400, { message: "엑셀 파일에 직원 정보가 없습니다." });
+      }
+
+      const importedEmployees = [];
+
+      for (const row of rows) {
+        const payload = normalizeEmployeePayload({
+          employeeNumber: row["사원번호"] || row.employeeNumber || row["사번"],
+          voterName: row["이름"] || row.voterName || row["성명"],
+          password:
+            row["비밀번호 (휴대폰 뒷자리)"] ||
+            row.password ||
+            row["비밀번호"] ||
+            row["휴대폰 뒷자리"]
+        });
+
+        if (!payload) {
+          continue;
+        }
+
+        if (importedEmployees.some((employee) => employee.employeeNumber === payload.employeeNumber)) {
+          continue;
+        }
+
+        importedEmployees.push(payload);
+      }
+
+      if (!importedEmployees.length) {
+        return sendJson(response, 400, {
+          message: "유효한 직원 정보가 없습니다. 열 이름을 사원번호, 이름, 비밀번호 (휴대폰 뒷자리)로 맞춰주세요."
+        });
+      }
+
+      const allowedEmployeeNumbers = new Set(importedEmployees.map((employee) => employee.employeeNumber));
+      const filteredVotes = readJson(VOTES_PATH).filter((vote) => allowedEmployeeNumbers.has(vote.employeeNumber));
+
+      writeJson(EMPLOYEES_PATH, importedEmployees);
+      writeJson(VOTES_PATH, filteredVotes);
+
+      return sendJson(response, 201, {
+        message: `${importedEmployees.length}명의 직원 명단으로 로그인 기준을 덮어썼습니다.`,
+        count: importedEmployees.length
+      });
+    } catch (error) {
+      return sendJson(response, 400, { message: "엑셀 파일을 읽는 중 오류가 발생했습니다." });
+    }
+  });
+
+  request.pipe(busboy);
+}
+
 function handleRestoreLatestVideosBackup(response) {
   const backups = listJsonBackups("videos");
 
@@ -918,6 +1044,18 @@ function normalizeVideoPayload(payload) {
   }
 
   return { title, submitter, description, type, url };
+}
+
+function normalizeEmployeePayload(payload) {
+  const employeeNumber = sanitizeText(payload.employeeNumber);
+  const voterName = sanitizeText(payload.voterName);
+  const password = sanitizeText(payload.password);
+
+  if (!employeeNumber || !voterName || !password || !/^\d{4}$/.test(password)) {
+    return null;
+  }
+
+  return { employeeNumber, voterName, password };
 }
 
 function createVideoId(title, videos) {
