@@ -42,7 +42,7 @@ let adminPassword = "";
 let isAuthenticated = false;
 let pendingPasswordResolver = null;
 let pendingConfirmResolver = null;
-arrangeBulkUploadPanels();
+configureBulkUploadPanels();
 
 setAuthStatus("관리자 비밀번호를 입력해 주세요.");
 setAdminUIEnabled(false);
@@ -619,26 +619,31 @@ function showToast(message) {
   }, 2200);
 }
 
-function arrangeBulkUploadPanels() {
+function configureBulkUploadPanels() {
   const videoPanel = downloadVideoTemplateButton?.closest(".panel");
   const employeePanel = downloadEmployeeTemplateButton?.closest(".panel");
-  const videoBulkBlock = downloadVideoTemplateButton?.closest(".bulk-upload");
-  const employeeBulkBlock = downloadEmployeeTemplateButton?.closest(".bulk-upload");
 
-  if (!videoPanel || !employeePanel || !videoBulkBlock || !employeeBulkBlock || videoPanel === employeePanel) {
-    return;
+  if (videoPanel) {
+    const title = videoPanel.querySelector(".panel__heading h2");
+    const description = videoPanel.querySelector(".panel__heading p");
+    if (title) {
+      title.textContent = "영상 일괄 등록";
+    }
+    if (description) {
+      description.textContent = "양식 파일을 업로드하면 기존 영상 목록 전체를 엑셀 내용으로 덮어씁니다.";
+    }
   }
 
-  let grid = videoPanel.querySelector(".bulk-upload-grid");
-  if (!grid) {
-    grid = document.createElement("div");
-    grid.className = "bulk-upload-grid";
-    videoBulkBlock.parentNode.insertBefore(grid, videoBulkBlock);
+  if (employeePanel) {
+    const title = employeePanel.querySelector(".panel__heading h2");
+    const description = employeePanel.querySelector(".panel__heading p");
+    if (title) {
+      title.textContent = "직원 일괄 등록";
+    }
+    if (description) {
+      description.textContent = "양식 파일을 업로드하면 기존 로그인 대상자 전체를 엑셀 내용으로 덮어씁니다.";
+    }
   }
-
-  grid.appendChild(videoBulkBlock);
-  grid.appendChild(employeeBulkBlock);
-  employeePanel.remove();
 }
 
 async function updateVotingState(endpoint, successMessage) {
