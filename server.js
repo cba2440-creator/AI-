@@ -734,13 +734,38 @@ function handleExportResults(response) {
     ["투표 완료 인원", results.totalVoters],
     ["총 선택 수", results.totalSelections],
     [],
-    ["영상 번호", "작품명", "득표 수", "득표율(%)"]
+    ["등수", "영상 번호", "작품명", "득표 수", "득표율(%)"]
   ];
 
-  videos.forEach((video, index) => {
-    const count = results.voteCounts[video.id] || 0;
-    const percentage = results.totalSelections > 0 ? Number(((count / results.totalSelections) * 100).toFixed(2)) : 0;
-    summaryRows.push([String(index + 1).padStart(2, "0"), stripLeadingNumber(video.title), count, percentage]);
+  const rankedVideos = videos
+    .map((video, index) => {
+      const count = results.voteCounts[video.id] || 0;
+      const percentage = results.totalSelections > 0 ? Number(((count / results.totalSelections) * 100).toFixed(2)) : 0;
+      return {
+        video,
+        originalIndex: index,
+        count,
+        percentage
+      };
+    })
+    .sort((left, right) => right.count - left.count || left.originalIndex - right.originalIndex);
+
+  let previousCount = null;
+  let currentRank = 0;
+
+  rankedVideos.forEach((item, index) => {
+    if (item.count !== previousCount) {
+      currentRank = index + 1;
+      previousCount = item.count;
+    }
+
+    summaryRows.push([
+      currentRank,
+      String(item.originalIndex + 1).padStart(2, "0"),
+      stripLeadingNumber(item.video.title),
+      item.count,
+      item.percentage
+    ]);
   });
 
   const voteRows = [
