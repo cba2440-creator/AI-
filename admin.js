@@ -42,6 +42,7 @@ let adminPassword = "";
 let isAuthenticated = false;
 let pendingPasswordResolver = null;
 let pendingConfirmResolver = null;
+arrangeBulkUploadPanels();
 
 setAuthStatus("관리자 비밀번호를 입력해 주세요.");
 setAdminUIEnabled(false);
@@ -616,6 +617,28 @@ function showToast(message) {
   showToast.timerId = window.setTimeout(() => {
     adminToast.className = "admin-toast";
   }, 2200);
+}
+
+function arrangeBulkUploadPanels() {
+  const videoPanel = downloadVideoTemplateButton?.closest(".panel");
+  const employeePanel = downloadEmployeeTemplateButton?.closest(".panel");
+  const videoBulkBlock = downloadVideoTemplateButton?.closest(".bulk-upload");
+  const employeeBulkBlock = downloadEmployeeTemplateButton?.closest(".bulk-upload");
+
+  if (!videoPanel || !employeePanel || !videoBulkBlock || !employeeBulkBlock || videoPanel === employeePanel) {
+    return;
+  }
+
+  let grid = videoPanel.querySelector(".bulk-upload-grid");
+  if (!grid) {
+    grid = document.createElement("div");
+    grid.className = "bulk-upload-grid";
+    videoBulkBlock.parentNode.insertBefore(grid, videoBulkBlock);
+  }
+
+  grid.appendChild(videoBulkBlock);
+  grid.appendChild(employeeBulkBlock);
+  employeePanel.remove();
 }
 
 async function updateVotingState(endpoint, successMessage) {

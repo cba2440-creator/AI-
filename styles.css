@@ -235,6 +235,12 @@ a {
   gap: 16px;
 }
 
+.bulk-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
 .vote-form input,
 .vote-form select,
 .vote-form textarea {
@@ -715,6 +721,10 @@ a {
 @media (max-width: 1080px) {
   .layout--employee,
   .admin-page .layout--admin {
+    grid-template-columns: 1fr;
+  }
+
+  .bulk-upload-grid {
     grid-template-columns: 1fr;
   }
 
