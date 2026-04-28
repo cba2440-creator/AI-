@@ -54,6 +54,7 @@ const videoFileLabel = document.querySelector("#video-file-label");
 const videoFormDescription = document.querySelector("#video-form-description");
 const videoFormHint = document.querySelector("#video-form-hint");
 const videoFormResetButton = document.querySelector("#video-form-reset");
+const videoBulkPanel = document.querySelector("#video-bulk-panel");
 const downloadVideoTemplateButton = document.querySelector("#download-video-template");
 const videoBulkForm = document.querySelector("#video-bulk-form");
 const videoBulkFileInput = document.querySelector("#video-bulk-file");
@@ -723,6 +724,10 @@ function syncContestTypeFormState() {
   const contestType = videoContestTypeInput.value || activeContestType;
   const isMusicContest = contestType === "bgm";
   const formEnabled = Boolean(adminPassword && isAuthenticated);
+
+  if (videoBulkPanel) {
+    videoBulkPanel.hidden = isMusicContest;
+  }
 
   if (lyricsField) {
     lyricsField.hidden = !isMusicContest;

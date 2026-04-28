@@ -55,6 +55,11 @@ const state = {
   lastVerifiedKey: "",
   currentlyPlayingId: null,
   pendingAutoplayId: null,
+  playbackSnapshot: {
+    id: null,
+    currentTime: 0,
+    shouldResume: false
+  },
   verificationTimer: null,
   lookupRequestId: 0
 };
@@ -380,6 +385,7 @@ function applySelectedVideoIds(videoIds) {
 }
 
 function renderVideoCards() {
+  capturePlaybackSnapshot();
   videoGrid.innerHTML = "";
   const visibleVideos = getVisibleVideos();
   const hasAccess = Boolean(state.verifiedVoter);
@@ -419,10 +425,16 @@ function renderVideoCards() {
     media.appendChild(createMediaElement(video));
     videoGrid.appendChild(card);
 
-    if (state.pendingAutoplayId === video.id) {
+    if (state.pendingAutoplayId === video.id || state.playbackSnapshot.id === video.id) {
       requestAnimationFrame(() => {
         const mediaElement = card.querySelector("audio, video");
-        if (mediaElement && typeof mediaElement.play === "function") {
+        if (!mediaElement) {
+          return;
+        }
+
+        restorePlaybackSnapshot(mediaElement, video.id);
+
+        if ((state.pendingAutoplayId === video.id || state.playbackSnapshot.shouldResume) && typeof mediaElement.play === "function") {
           mediaElement.play().catch(() => {});
         }
       });
@@ -623,11 +635,20 @@ async function refreshMetaState() {
     }
 
     const meta = await response.json();
+    const previousContestType = state.activeContestType;
     state.activeContestType = meta.publicContestType || state.activeContestType;
     state.votingClosed = Boolean(meta.votingClosed);
     applyContestTheme();
     renderVoteOptions();
-    renderVideoCards();
+    if (previousContestType !== state.activeContestType) {
+      state.currentlyPlayingId = null;
+      state.playbackSnapshot = {
+        id: null,
+        currentTime: 0,
+        shouldResume: false
+      };
+      renderVideoCards();
+    }
     renderStatus();
     updateFormAvailability();
   } catch {}
@@ -700,4 +721,50 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function capturePlaybackSnapshot() {
+  if (!state.currentlyPlayingId) {
+    state.playbackSnapshot = {
+      id: null,
+      currentTime: 0,
+      shouldResume: false
+    };
+    return;
+  }
+
+  const activeMedia = videoGrid.querySelector("audio, video");
+  if (!activeMedia) {
+    return;
+  }
+
+  state.playbackSnapshot = {
+    id: state.currentlyPlayingId,
+    currentTime: Number.isFinite(activeMedia.currentTime) ? activeMedia.currentTime : 0,
+    shouldResume: !activeMedia.paused
+  };
+}
+
+function restorePlaybackSnapshot(mediaElement, videoId) {
+  if (state.playbackSnapshot.id !== videoId) {
+    return;
+  }
+
+  const targetTime = state.playbackSnapshot.currentTime;
+  if (!(targetTime > 0)) {
+    return;
+  }
+
+  const applyTime = () => {
+    try {
+      mediaElement.currentTime = targetTime;
+    } catch {}
+  };
+
+  if (mediaElement.readyState >= 1) {
+    applyTime();
+    return;
+  }
+
+  mediaElement.addEventListener("loadedmetadata", applyTime, { once: true });
 }
