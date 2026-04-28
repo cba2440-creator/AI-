@@ -44,6 +44,12 @@ const MEDIA_BACKUP_DIR = path.join(BACKUP_DIR, "uploads");
 const JSON_BACKUP_RETENTION = 40;
 const MEDIA_BACKUP_RETENTION = 20;
 const STORAGE_KEY_BY_PATH = new Map();
+const CONTEST_TYPES = [
+  { id: "video", label: "영상 콘테스트" },
+  { id: "bgm", label: "AI Music Contest" }
+];
+const DEFAULT_CONTEST_TYPE = "video";
+const CONTEST_TYPE_IDS = new Set(CONTEST_TYPES.map((contestType) => contestType.id));
 const databaseState = {
   initialized: false,
   cache: {
@@ -55,19 +61,163 @@ const databaseState = {
 };
 
 const MIME_TYPES = {
+  ".aac": "audio/aac",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
   ".mp4": "video/mp4",
   ".png": "image/png",
-  ".svg": "image/svg+xml; charset=utf-8"
+  ".svg": "image/svg+xml; charset=utf-8",
+  ".wav": "audio/wav"
 };
 
 STORAGE_KEY_BY_PATH.set(VIDEOS_PATH, "videos");
 STORAGE_KEY_BY_PATH.set(VOTES_PATH, "votes");
 STORAGE_KEY_BY_PATH.set(STATE_PATH, "state");
 STORAGE_KEY_BY_PATH.set(EMPLOYEES_PATH, "employees");
+
+function getContestTypes() {
+  return CONTEST_TYPES.map((contestType) => ({ ...contestType }));
+}
+
+function buildDefaultVotingClosedState() {
+  return CONTEST_TYPES.reduce((accumulator, contestType) => {
+    accumulator[contestType.id] = false;
+    return accumulator;
+  }, {});
+}
+
+function normalizeContestType(value) {
+  const normalized = sanitizeText(value).toLowerCase();
+  return CONTEST_TYPE_IDS.has(normalized) ? normalized : DEFAULT_CONTEST_TYPE;
+}
+
+function getContestLabel(contestType) {
+  const normalized = normalizeContestType(contestType);
+  return CONTEST_TYPES.find((item) => item.id === normalized)?.label || CONTEST_TYPES[0].label;
+}
+
+function normalizeStatePayload(payload) {
+  const state = payload && typeof payload === "object" ? payload : {};
+  const legacyVotingClosed = Boolean(state.votingClosed);
+  const votingClosedByContestType = buildDefaultVotingClosedState();
+  const publicContestType = normalizeContestType(state.publicContestType);
+
+  for (const contestType of CONTEST_TYPES) {
+    const storedValue = state.votingClosedByContestType?.[contestType.id];
+    votingClosedByContestType[contestType.id] = typeof storedValue === "boolean" ? storedValue : legacyVotingClosed;
+  }
+
+  return {
+    ...state,
+    resetVersion: Number.isFinite(Number(state.resetVersion)) ? Number(state.resetVersion) : 1,
+    updatedAt: sanitizeText(state.updatedAt) || new Date().toISOString(),
+    publicContestType,
+    votingClosedByContestType,
+    votingClosed: votingClosedByContestType[DEFAULT_CONTEST_TYPE]
+  };
+}
+
+function isVotingClosedForContest(state, contestType) {
+  const normalizedState = normalizeStatePayload(state);
+  return Boolean(normalizedState.votingClosedByContestType[normalizeContestType(contestType)]);
+}
+
+function normalizeVideoRecord(video) {
+  const contestType = normalizeContestType(video.contestType);
+  return {
+    ...video,
+    id: sanitizeText(video.id),
+    title: sanitizeText(video.title),
+    submitter: sanitizeText(video.submitter),
+    description: sanitizeText(video.description),
+    lyrics: sanitizeText(video.lyrics),
+    contestType,
+    type: contestType === "bgm" ? "audio" : "youtube",
+    url: sanitizeText(video.url),
+    localVideoUrl: sanitizeText(video.localVideoUrl)
+  };
+}
+
+function normalizeVideosPayload(payload) {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((video) => normalizeVideoRecord(video || {}))
+    .filter((video) => {
+      if (!video.id || !video.title || !video.submitter || !video.description) {
+        return false;
+      }
+
+      if (video.contestType === "video") {
+        return Boolean(video.url);
+      }
+
+      return Boolean(video.localVideoUrl || video.url || video.contestType === "bgm");
+    });
+}
+
+function normalizeVoteRecord(vote) {
+  const videoIds = [...new Set(normalizeVoteVideoIds(vote).map((value) => sanitizeText(value)).filter(Boolean))];
+
+  return {
+    ...vote,
+    employeeNumber: sanitizeText(vote.employeeNumber),
+    voterName: sanitizeText(vote.voterName),
+    contestType: normalizeContestType(vote.contestType),
+    videoIds,
+    submittedAt: sanitizeText(vote.submittedAt) || new Date().toISOString()
+  };
+}
+
+function normalizeVotesPayload(payload) {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((vote) => normalizeVoteRecord(vote || {}))
+    .filter((vote) => vote.employeeNumber && vote.videoIds.length > 0);
+}
+
+function normalizeEmployeesPayload(payload) {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((employee) => normalizeEmployeePayload(employee || {}))
+    .filter(Boolean);
+}
+
+function normalizeStoragePayload(filePath, payload) {
+  if (filePath === VIDEOS_PATH) {
+    return normalizeVideosPayload(payload);
+  }
+
+  if (filePath === VOTES_PATH) {
+    return normalizeVotesPayload(payload);
+  }
+
+  if (filePath === STATE_PATH) {
+    return normalizeStatePayload(payload);
+  }
+
+  if (filePath === EMPLOYEES_PATH) {
+    return normalizeEmployeesPayload(payload);
+  }
+
+  return payload;
+}
+
+function buildResultsByContestType() {
+  return Object.fromEntries(CONTEST_TYPES.map((contestType) => [contestType.id, buildResults(contestType.id)]));
+}
 
 initializeStorage();
 
@@ -80,15 +230,34 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (pathname === "/api/meta" && request.method === "GET") {
-    return sendJson(response, 200, readJson(STATE_PATH));
+    const contestType = normalizeContestType(requestUrl.searchParams.get("contestType"));
+    const state = readJson(STATE_PATH);
+    return sendJson(response, 200, {
+      ...state,
+      activeContestType: contestType,
+      publicContestType: state.publicContestType,
+      contestTypes: getContestTypes(),
+      votingClosed: isVotingClosedForContest(state, contestType)
+    });
   }
 
   if (pathname === "/api/results" && request.method === "GET") {
-    return sendJson(response, 200, buildResults());
+    const contestType = requestUrl.searchParams.has("contestType")
+      ? normalizeContestType(requestUrl.searchParams.get("contestType"))
+      : "";
+    return sendJson(response, 200, contestType ? buildResults(contestType) : buildResultsByContestType());
   }
 
   if (pathname === "/api/eligible-voter" && request.method === "GET") {
-    return handleEligibleVoterLookup(response, requestUrl.searchParams);
+    return handleEligibleVoterLookup(response, {
+      employeeNumber: requestUrl.searchParams.get("employeeNumber"),
+      password: requestUrl.searchParams.get("password"),
+      contestType: requestUrl.searchParams.get("contestType")
+    });
+  }
+
+  if (pathname === "/api/eligible-voter" && request.method === "POST") {
+    return handleEligibleVoterLookupRequest(request, response);
   }
 
   if (pathname === "/api/vote" && request.method === "POST") {
@@ -107,8 +276,11 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, {
       videos: readJson(VIDEOS_PATH),
       votes: readJson(VOTES_PATH),
-      results: buildResults(),
-      meta: readJson(STATE_PATH)
+      resultsByContestType: buildResultsByContestType(),
+      meta: {
+        ...readJson(STATE_PATH),
+        contestTypes: getContestTypes()
+      }
     });
   }
 
@@ -143,7 +315,7 @@ const server = http.createServer(async (request, response) => {
 
     const parts = pathname.split("/");
     const videoId = parts[parts.length - 2];
-    return handleVideoUpload(request, response, videoId);
+    return handleContestMediaUpload(request, response, videoId);
   }
 
   if (pathname.startsWith("/api/admin/votes/") && request.method === "DELETE") {
@@ -151,50 +323,59 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
     }
 
-    return handleVoteDelete(response, pathname.split("/").pop());
+    return handleVoteDelete(response, pathname.split("/").pop(), requestUrl.searchParams.get("contestType"));
   }
 
   if (pathname === "/api/admin/reset-votes" && request.method === "POST") {
     if (!isAuthorizedAdmin(request)) {
-      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+      return sendJson(response, 401, { message: "??? ????? ???? ????." });
     }
 
+    const contestType = normalizeContestType(requestUrl.searchParams.get("contestType"));
     const state = readJson(STATE_PATH);
-    writeJson(VOTES_PATH, []);
+    writeJson(VOTES_PATH, readJson(VOTES_PATH).filter((vote) => vote.contestType !== contestType));
     writeJson(STATE_PATH, {
       ...state,
       resetVersion: (state.resetVersion || 0) + 1,
       updatedAt: new Date().toISOString()
     });
-    return sendJson(response, 200, { message: "전체 투표가 초기화되었습니다." });
+    return sendJson(response, 200, { message: `${getContestLabel(contestType)} ??? ????????.` });
   }
 
   if (pathname === "/api/admin/close-voting" && request.method === "POST") {
     if (!isAuthorizedAdmin(request)) {
-      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+      return sendJson(response, 401, { message: "??? ????? ???? ????." });
     }
 
+    const contestType = normalizeContestType(requestUrl.searchParams.get("contestType"));
     const state = readJson(STATE_PATH);
     writeJson(STATE_PATH, {
       ...state,
-      votingClosed: true,
+      votingClosedByContestType: {
+        ...state.votingClosedByContestType,
+        [contestType]: true
+      },
       updatedAt: new Date().toISOString()
     });
-    return sendJson(response, 200, { message: "마감되었습니다." });
+    return sendJson(response, 200, { message: `${getContestLabel(contestType)} ??? ??????.` });
   }
 
   if (pathname === "/api/admin/open-voting" && request.method === "POST") {
     if (!isAuthorizedAdmin(request)) {
-      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+      return sendJson(response, 401, { message: "??? ????? ???? ????." });
     }
 
+    const contestType = normalizeContestType(requestUrl.searchParams.get("contestType"));
     const state = readJson(STATE_PATH);
     writeJson(STATE_PATH, {
       ...state,
-      votingClosed: false,
+      votingClosedByContestType: {
+        ...state.votingClosedByContestType,
+        [contestType]: false
+      },
       updatedAt: new Date().toISOString()
     });
-    return sendJson(response, 200, { message: "마감 해제되었습니다." });
+    return sendJson(response, 200, { message: `${getContestLabel(contestType)} ?? ??? ??????.` });
   }
 
   if (pathname === "/api/admin/export-results" && request.method === "GET") {
@@ -202,7 +383,15 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
     }
 
-    return handleExportResults(response);
+    return handleExportResults(response, normalizeContestType(requestUrl.searchParams.get("contestType")));
+  }
+
+  if (pathname === "/api/admin/public-contest" && request.method === "POST") {
+    if (!isAuthorizedAdmin(request)) {
+      return sendJson(response, 401, { message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    return handlePublicContestUpdate(request, response);
   }
 
   if (pathname === "/api/admin/video-import-template" && request.method === "GET") {
@@ -305,7 +494,9 @@ function ensureDataFiles() {
     writeJson(STATE_PATH, {
       resetVersion: 1,
       updatedAt: new Date().toISOString(),
-      votingClosed: false
+      publicContestType: DEFAULT_CONTEST_TYPE,
+      votingClosed: false,
+      votingClosedByContestType: buildDefaultVotingClosedState()
     });
   }
 
@@ -357,7 +548,9 @@ function initializeDatabaseStorage() {
       state: readBundledJsonOrDefault(STATE_PATH, {
         resetVersion: 1,
         updatedAt: new Date().toISOString(),
-        votingClosed: false
+        publicContestType: DEFAULT_CONTEST_TYPE,
+        votingClosed: false,
+        votingClosedByContestType: buildDefaultVotingClosedState()
       }),
       employees: readBundledJsonOrDefault(EMPLOYEES_PATH, [])
     };
@@ -367,7 +560,9 @@ function initializeDatabaseStorage() {
   databaseState.cache.state = cloneJson(initialData.state || {
     resetVersion: 1,
     updatedAt: new Date().toISOString(),
-    votingClosed: false
+    publicContestType: DEFAULT_CONTEST_TYPE,
+    votingClosed: false,
+    votingClosedByContestType: buildDefaultVotingClosedState()
   });
   databaseState.cache.employees = cloneJson(initialData.employees || []);
 
@@ -465,41 +660,71 @@ function readBundledJsonOrDefault(filePath, fallbackValue) {
   return cloneJson(fallbackValue);
 }
 
-function handleEligibleVoterLookup(response, searchParams) {
-  const employeeNumber = sanitizeText(searchParams.get("employeeNumber"));
-  const password = sanitizeText(searchParams.get("password"));
+async function handleEligibleVoterLookupRequest(request, response) {
+  try {
+    const payload = JSON.parse((await readRequestBody(request)) || "{}");
+    return handleEligibleVoterLookup(response, payload);
+  } catch {
+    return sendJson(response, 400, { message: "잘못된 요청입니다." });
+  }
+}
+
+function handleEligibleVoterLookup(response, payload) {
+  const employeeNumber = sanitizeText(payload.employeeNumber);
+  const password = sanitizeText(payload.password);
+  const contestType = normalizeContestType(payload.contestType);
 
   if (!employeeNumber || !password) {
-    return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
+    return sendJson(response, 400, { message: "????? ????? ??? ???." });
   }
 
   const employee = findEmployee(employeeNumber);
   if (!employee || employee.password !== password) {
-    return sendJson(response, 401, { message: "사원번호 또는 비밀번호를 다시 확인해 주세요." });
+    return sendJson(response, 401, { message: "???? ?? ????? ?? ??? ???." });
   }
 
-  const vote = findVote(employeeNumber);
+  const votesByContestType = Object.fromEntries(CONTEST_TYPES.map((item) => {
+    const vote = findVote(employeeNumber, item.id);
+    return [
+      item.id,
+      {
+        hasVoted: Boolean(vote),
+        videoIds: vote ? normalizeVoteVideoIds(vote) : [],
+        submittedAt: vote ? vote.submittedAt : null
+      }
+    ];
+  }));
+
   return sendJson(response, 200, {
     employeeNumber,
     voterName: employee.voterName,
-    hasVoted: Boolean(vote),
-    videoIds: vote ? normalizeVoteVideoIds(vote) : [],
-    submittedAt: vote ? vote.submittedAt : null
+    contestType,
+    hasVoted: votesByContestType[contestType].hasVoted,
+    videoIds: votesByContestType[contestType].videoIds,
+    submittedAt: votesByContestType[contestType].submittedAt,
+    votesByContestType
   });
 }
 
-function buildResults() {
+function buildResults(contestType = "") {
   const videos = readJson(VIDEOS_PATH);
   const votes = readJson(VOTES_PATH);
   const employees = readJson(EMPLOYEES_PATH);
-  const voteCounts = videos.reduce((accumulator, video) => {
+  const normalizedContestType = contestType ? normalizeContestType(contestType) : "";
+  const filteredVideos = normalizedContestType
+    ? videos.filter((video) => video.contestType === normalizedContestType)
+    : videos;
+  const filteredVotes = normalizedContestType
+    ? votes.filter((vote) => vote.contestType === normalizedContestType)
+    : votes;
+  const voteCounts = filteredVideos.reduce((accumulator, video) => {
     accumulator[video.id] = 0;
     return accumulator;
   }, {});
 
   let totalSelections = 0;
 
-  votes.forEach((vote) => {
+  filteredVotes.forEach((vote) => {
     for (const videoId of normalizeVoteVideoIds(vote)) {
       if (voteCounts[videoId] !== undefined) {
         voteCounts[videoId] += 1;
@@ -509,7 +734,8 @@ function buildResults() {
   });
 
   return {
-    totalVoters: votes.length,
+    contestType: normalizedContestType || null,
+    totalVoters: filteredVotes.length,
     totalEligible: employees.length,
     totalSelections,
     voteCounts
@@ -521,41 +747,44 @@ async function handleVote(request, response) {
     const payload = JSON.parse((await readRequestBody(request)) || "{}");
     const employeeNumber = sanitizeText(payload.employeeNumber);
     const password = sanitizeText(payload.password);
+    const contestType = normalizeContestType(payload.contestType);
     const videoIds = Array.isArray(payload.videoIds)
       ? [...new Set(payload.videoIds.map((value) => sanitizeText(value)).filter(Boolean))]
       : [];
     const state = readJson(STATE_PATH);
     const videos = readJson(VIDEOS_PATH);
+    const contestVideos = videos.filter((video) => video.contestType === contestType);
     const votes = readJson(VOTES_PATH);
     const employee = findEmployee(employeeNumber);
 
     if (!employeeNumber || !password) {
-      return sendJson(response, 400, { message: "사원번호와 비밀번호를 입력해 주세요." });
+      return sendJson(response, 400, { message: "????? ????? ??? ???." });
     }
 
     if (videoIds.length !== 1) {
-      return sendJson(response, 400, { message: "반드시 작품 1개를 선택해 주세요." });
+      return sendJson(response, 400, { message: "??? ?? 1?? ??? ???." });
     }
 
     if (!employee || employee.password !== password) {
-      return sendJson(response, 403, { message: "사원번호 또는 비밀번호를 다시 확인해 주세요." });
+      return sendJson(response, 403, { message: "???? ?? ????? ?? ??? ???." });
     }
 
-    if (state.votingClosed) {
-      return sendJson(response, 403, { message: "투표가 마감되어 더 이상 참여할 수 없습니다." });
+    if (isVotingClosedForContest(state, contestType)) {
+      return sendJson(response, 403, { message: "??? ???? ? ?? ??? ? ????." });
     }
 
-    if (!videoIds.every((videoId) => videos.some((video) => video.id === videoId))) {
-      return sendJson(response, 400, { message: "선택한 작품 정보가 올바르지 않습니다." });
+    if (!videoIds.every((videoId) => contestVideos.some((video) => video.id === videoId))) {
+      return sendJson(response, 400, { message: "??? ?? ??? ???? ????." });
     }
 
-    if (votes.some((vote) => vote.employeeNumber === employeeNumber)) {
-      return sendJson(response, 409, { message: "최초 제출 후에는 내용을 변경하거나 다시 투표할 수 없습니다." });
+    if (votes.some((vote) => vote.employeeNumber === employeeNumber && vote.contestType === contestType)) {
+      return sendJson(response, 409, { message: "?? ????? ?? ??? ???????." });
     }
 
     const newVote = {
       employeeNumber,
       voterName: employee.voterName,
+      contestType,
       videoIds,
       submittedAt: new Date().toISOString()
     };
@@ -564,12 +793,12 @@ async function handleVote(request, response) {
     writeJson(VOTES_PATH, votes);
 
     return sendJson(response, 201, {
-      message: "투표가 저장되었습니다.",
+      message: `${getContestLabel(contestType)} ??? ???????.`,
       voterName: newVote.voterName,
       submittedAt: newVote.submittedAt
     });
   } catch (error) {
-    return sendJson(response, 500, { message: "서버에서 투표를 처리하지 못했습니다." });
+    return sendJson(response, 500, { message: "???? ??? ???? ?????." });
   }
 }
 
@@ -625,6 +854,10 @@ function handleVideoUpload(request, response, id) {
   let savedFileName = "";
   let uploadError = null;
   let hasFile = false;
+  const contestType = normalizeContestType(videos[index].contestType);
+  const allowedExtensions = contestType === "bgm"
+    ? new Set([".mp3", ".wav", ".m4a", ".aac"])
+    : new Set([".mp4"]);
 
   busboy.on("file", (fieldName, file, info) => {
     if (fieldName !== "videoFile") {
@@ -633,8 +866,8 @@ function handleVideoUpload(request, response, id) {
     }
 
     hasFile = true;
-    const extension = path.extname(info.filename || "").toLowerCase() || ".mp4";
-    if (extension !== ".mp4") {
+    const extension = path.extname(info.filename || "").toLowerCase() || (contestType === "bgm" ? ".mp3" : ".mp4");
+    if (!allowedExtensions.has(extension)) {
       uploadError = "MP4 파일만 업로드할 수 있습니다.";
       file.resume();
       return;
@@ -682,6 +915,84 @@ function handleVideoUpload(request, response, id) {
   request.pipe(busboy);
 }
 
+function handleContestMediaUpload(request, response, id) {
+  const videos = readJson(VIDEOS_PATH);
+  const index = videos.findIndex((video) => video.id === id);
+
+  if (index < 0) {
+    return sendJson(response, 404, { message: "업로드할 작품을 찾지 못했습니다." });
+  }
+
+  const contestType = normalizeContestType(videos[index].contestType);
+  const allowedExtensions = contestType === "bgm"
+    ? new Set([".mp3", ".wav", ".m4a", ".aac"])
+    : new Set([".mp4"]);
+  const fallbackExtension = contestType === "bgm" ? ".mp3" : ".mp4";
+  const busboy = Busboy({ headers: request.headers });
+  let savedFileName = "";
+  let uploadError = null;
+  let hasFile = false;
+
+  busboy.on("file", (fieldName, file, info) => {
+    if (fieldName !== "videoFile") {
+      file.resume();
+      return;
+    }
+
+    hasFile = true;
+    const extension = path.extname(info.filename || "").toLowerCase() || fallbackExtension;
+    if (!allowedExtensions.has(extension)) {
+      uploadError = contestType === "bgm"
+        ? "MP3, WAV, M4A, AAC 음원 파일만 업로드할 수 있습니다."
+        : "MP4 파일만 업로드할 수 있습니다.";
+      file.resume();
+      return;
+    }
+
+    const nextFileName = `${id}-${Date.now()}${extension}`;
+    const destinationPath = path.join(MEDIA_DIR, nextFileName);
+    const writeStream = fs.createWriteStream(destinationPath);
+
+    file.pipe(writeStream);
+    savedFileName = nextFileName;
+
+    writeStream.on("error", () => {
+      uploadError = contestType === "bgm" ? "음원 파일 저장에 실패했습니다." : "영상 파일 저장에 실패했습니다.";
+    });
+  });
+
+  busboy.on("finish", () => {
+    if (uploadError) {
+      if (savedFileName) {
+        safelyDeleteFile(path.join(MEDIA_DIR, savedFileName));
+      }
+      return sendJson(response, 400, { message: uploadError });
+    }
+
+    if (!hasFile || !savedFileName) {
+      return sendJson(response, 400, {
+        message: contestType === "bgm" ? "업로드할 음원 파일을 선택해 주세요." : "업로드할 MP4 파일을 선택해 주세요."
+      });
+    }
+
+    const previousUrl = videos[index].localVideoUrl;
+    videos[index].localVideoUrl = `/media/${savedFileName}`;
+    writeJson(VIDEOS_PATH, videos);
+
+    if (previousUrl) {
+      backupMediaFile(path.join(MEDIA_DIR, path.basename(previousUrl)));
+      safelyDeleteFile(path.join(MEDIA_DIR, path.basename(previousUrl)));
+    }
+
+    return sendJson(response, 200, {
+      message: contestType === "bgm" ? "음원 파일이 업로드되었습니다." : "사이트 재생용 영상 파일이 업로드되었습니다.",
+      localVideoUrl: videos[index].localVideoUrl
+    });
+  });
+
+  request.pipe(busboy);
+}
+
 function handleVideoDelete(response, id) {
   const videos = readJson(VIDEOS_PATH);
   const votes = readJson(VOTES_PATH);
@@ -710,77 +1021,71 @@ function handleVideoDelete(response, id) {
   return sendJson(response, 200, { message: "영상과 관련 투표가 삭제되었습니다." });
 }
 
-function handleVoteDelete(response, employeeNumber) {
+function handleVoteDelete(response, employeeNumber, contestTypeInput) {
+  const contestType = normalizeContestType(contestTypeInput);
   const votes = readJson(VOTES_PATH);
-  const nextVotes = votes.filter((vote) => vote.employeeNumber !== employeeNumber);
+  const nextVotes = votes.filter((vote) => !(vote.employeeNumber === employeeNumber && vote.contestType === contestType));
 
   if (nextVotes.length === votes.length) {
-    return sendJson(response, 404, { message: "삭제할 투표를 찾지 못했습니다." });
+    return sendJson(response, 404, { message: "??? ??? ?? ?????." });
   }
 
   writeJson(VOTES_PATH, nextVotes);
-  return sendJson(response, 200, { message: "개별 투표가 삭제되었습니다." });
+  return sendJson(response, 200, { message: `${getContestLabel(contestType)} ??? ??????.` });
 }
 
-function handleExportResults(response) {
-  const videos = readJson(VIDEOS_PATH);
-  const votes = readJson(VOTES_PATH);
+async function handlePublicContestUpdate(request, response) {
+  try {
+    const payload = JSON.parse((await readRequestBody(request)) || "{}");
+    const publicContestType = normalizeContestType(payload.publicContestType);
+    const state = readJson(STATE_PATH);
+    writeJson(STATE_PATH, {
+      ...state,
+      publicContestType,
+      updatedAt: new Date().toISOString()
+    });
+
+    return sendJson(response, 200, {
+      message: `사용자 페이지 노출 콘테스트를 ${getContestLabel(publicContestType)}로 변경했습니다.`,
+      publicContestType
+    });
+  } catch {
+    return sendJson(response, 400, { message: "노출 콘테스트 설정을 저장하지 못했습니다." });
+  }
+}
+
+function handleExportResults(response, contestType) {
+  const normalizedContestType = normalizeContestType(contestType);
+  const contestLabel = getContestLabel(normalizedContestType);
+  const videos = readJson(VIDEOS_PATH).filter((video) => video.contestType === normalizedContestType);
+  const votes = readJson(VOTES_PATH).filter((vote) => vote.contestType === normalizedContestType);
   const employees = readJson(EMPLOYEES_PATH);
-  const results = buildResults();
+  const results = buildResults(normalizedContestType);
+  const videoIndexById = new Map(videos.map((video, index) => [video.id, index]));
 
-  const summaryRows = [
-    ["구분", "값"],
-    ["총 대상 인원", results.totalEligible],
-    ["투표 완료 인원", results.totalVoters],
-    ["총 선택 수", results.totalSelections],
-    [],
-    ["등수", "영상 번호", "작품명", "득표 수", "득표율(%)"]
-  ];
+  const summaryRows = [["????", contestLabel], ["? ???", results.totalEligible], ["? ?? ?", results.totalVoters], ["? ?? ?", results.totalSelections], []];
+  summaryRows.push(["??", "???", "?? ?", "??"]);
 
-  const rankedVideos = videos
-    .map((video, index) => {
-      const count = results.voteCounts[video.id] || 0;
-      const percentage = results.totalSelections > 0 ? Number(((count / results.totalSelections) * 100).toFixed(2)) : 0;
-      return {
-        video,
-        originalIndex: index,
-        count,
-        percentage
-      };
-    })
-    .sort((left, right) => right.count - left.count || left.originalIndex - right.originalIndex);
-
-  let previousCount = null;
-  let currentRank = 0;
-
-  rankedVideos.forEach((item, index) => {
-    if (item.count !== previousCount) {
-      currentRank = index + 1;
-      previousCount = item.count;
-    }
-
+  videos.forEach((video, index) => {
+    const count = results.voteCounts[video.id] || 0;
+    const percentage = results.totalSelections > 0 ? Math.round((count / results.totalSelections) * 100) : 0;
     summaryRows.push([
-      currentRank,
-      String(item.originalIndex + 1).padStart(2, "0"),
-      stripLeadingNumber(item.video.title),
-      item.count,
-      item.percentage
+      String(index + 1).padStart(2, "0"),
+      stripLeadingNumber(video.title),
+      count,
+      `${percentage}%`
     ]);
   });
 
-  const voteRows = [
-    ["사원번호", "이름", "선택 1", "제출 시각"]
-  ];
-  const videoNumberById = new Map(
-    videos.map((video, index) => [video.id, String(index + 1).padStart(2, "0")])
-  );
-
+  const voteRows = [["????", "????", "??", "?? ??", "?? ??"]];
   votes.forEach((vote) => {
     const selectedNumbers = normalizeVoteVideoIds(vote).map((videoId) => {
-      return videoNumberById.get(videoId) || videoId;
+      const index = videoIndexById.get(videoId);
+      return typeof index === "number" ? String(index + 1).padStart(2, "0") : videoId;
     });
 
     voteRows.push([
+      contestLabel,
       vote.employeeNumber,
       vote.voterName,
       selectedNumbers[0] || "",
@@ -788,18 +1093,18 @@ function handleExportResults(response) {
     ]);
   });
 
-  const pendingRows = [["사원번호", "이름", "상태"]];
+  const pendingRows = [["????", "????", "??", "??"]];
   const votedEmployeeNumbers = new Set(votes.map((vote) => vote.employeeNumber));
   employees
     .filter((employee) => !votedEmployeeNumbers.has(employee.employeeNumber))
     .forEach((employee) => {
-      pendingRows.push([employee.employeeNumber, employee.voterName, "투표 바랍니다"]);
+      pendingRows.push([contestLabel, employee.employeeNumber, employee.voterName, "?? ??"]);
     });
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), "결과 요약");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(voteRows), "투표 내역");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(pendingRows), "미투표 현황");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), "?? ??");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(voteRows), "?? ??");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(pendingRows), "??? ??");
 
   const buffer = XLSX.write(workbook, {
     type: "buffer",
@@ -808,19 +1113,20 @@ function handleExportResults(response) {
 
   response.writeHead(200, {
     "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-video-awards-results.xlsx")}"`
+    "Content-Disposition": `attachment; filename="${encodeURIComponent(`2026-${normalizedContestType}-contest-results.xlsx`)}"`
   });
   response.end(buffer);
 }
 
 function handleVideoImportTemplate(response) {
   const rows = [
-    ["영상 제목", "제출자", "내용", "영상 링크"],
-    ["01. 샘플 영상", "홍길동", "영상 설명을 입력합니다.", "https://www.youtube.com/watch?v=example"]
+    ["contestType", "title", "submitter", "description", "lyrics", "url"],
+    ["video", "01. 영상 제목", "홍길동", "영상 소개 문구입니다.", "", "https://www.youtube.com/watch?v=example"],
+    ["bgm", "01. AI Music Contest", "홍길동", "음악 소개 문구입니다.", "이곳에 가사를 입력합니다.", ""]
   ];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "영상등록양식");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "??????");
 
   const buffer = XLSX.write(workbook, {
     type: "buffer",
@@ -829,7 +1135,7 @@ function handleVideoImportTemplate(response) {
 
   response.writeHead(200, {
     "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-ai-video-import-template.xlsx")}"`
+    "Content-Disposition": `attachment; filename="${encodeURIComponent("2026-contest-import-template.xlsx")}"`
   });
   response.end(buffer);
 }
@@ -870,7 +1176,7 @@ function handleVideoImport(request, response) {
     hasFile = true;
     const extension = path.extname(info.filename || "").toLowerCase();
     if (![".xlsx", ".xls"].includes(extension)) {
-      uploadError = "엑셀 파일(.xlsx, .xls)만 업로드할 수 있습니다.";
+      uploadError = "?? ??(.xlsx, .xls)? ???? ? ????.";
       file.resume();
       return;
     }
@@ -884,7 +1190,7 @@ function handleVideoImport(request, response) {
     }
 
     if (!hasFile || !chunks.length) {
-      return sendJson(response, 400, { message: "업로드할 엑셀 파일을 선택해 주세요." });
+      return sendJson(response, 400, { message: "???? ?? ??? ??? ???." });
     }
 
     try {
@@ -894,18 +1200,20 @@ function handleVideoImport(request, response) {
       const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
 
       if (!rows.length) {
-        return sendJson(response, 400, { message: "엑셀 파일에 등록할 영상 정보가 없습니다." });
+        return sendJson(response, 400, { message: "?? ??? ??? ?? ??? ????." });
       }
 
       const importedVideos = [];
 
       for (const row of rows) {
         const payload = normalizeVideoPayload({
-          title: row["영상 제목"] || row.title || row["제목"],
-          submitter: row["제출자"] || row.submitter,
-          description: row["내용"] || row.description,
-          type: "youtube",
-          url: row["영상 링크"] || row.url || row["유튜브 링크"]
+          contestType: row.contestType || row["???? ??"] || row["contest"] || row["type"],
+          title: row.title || row["?? ??"] || row["??"],
+          submitter: row.submitter || row["???"],
+          description: row.description || row["??"],
+          lyrics: row.lyrics || row["가사"] || row["lyricsText"],
+          type: normalizeContestType(row.contestType || row["???? ??"] || row["contest"] || row["type"]) === "bgm" ? "audio" : "youtube",
+          url: row.url || row["?? ??"] || row["??? ??"]
         });
 
         if (!payload) {
@@ -921,7 +1229,7 @@ function handleVideoImport(request, response) {
 
       if (!importedVideos.length) {
         return sendJson(response, 400, {
-          message: "유효한 행이 없습니다. 열 이름은 영상 제목, 제출자, 내용, 영상 링크로 맞춰주세요."
+          message: "??? ?? ????. contestType, ?? ??, ???, ??, ?? ??? ??? ???."
         });
       }
 
@@ -936,12 +1244,12 @@ function handleVideoImport(request, response) {
       writeJson(VIDEOS_PATH, importedVideos);
       writeJson(VOTES_PATH, filteredVotes);
       return sendJson(response, 201, {
-        message: `${importedVideos.length}개의 영상으로 기존 목록을 덮어썼습니다.`,
+        message: `${importedVideos.length}?? ???? ??? ??????.`,
         count: importedVideos.length,
         videos: importedVideos
       });
     } catch (error) {
-      return sendJson(response, 400, { message: "엑셀 파일을 읽는 중 오류가 발생했습니다." });
+      return sendJson(response, 400, { message: "?? ??? ?? ? ??? ??????." });
     }
   });
 
@@ -1057,17 +1365,27 @@ function handleRestoreLatestVideosBackup(response) {
 }
 
 function normalizeVideoPayload(payload) {
+  const contestType = normalizeContestType(payload.contestType);
   const title = sanitizeText(payload.title);
   const submitter = sanitizeText(payload.submitter);
   const description = sanitizeText(payload.description);
-  const type = sanitizeText(payload.type || "youtube");
+  const lyrics = sanitizeText(payload.lyrics);
+  const type = contestType === "bgm" ? "audio" : sanitizeText(payload.type || "youtube");
   const url = sanitizeText(payload.url);
 
-  if (!title || !submitter || !description || !url || type !== "youtube") {
+  if (!title || !submitter || !description) {
     return null;
   }
 
-  return { title, submitter, description, type, url };
+  if (contestType === "video" && (!url || type !== "youtube")) {
+    return null;
+  }
+
+  if (contestType === "bgm" && type !== "audio") {
+    return null;
+  }
+
+  return { contestType, title, submitter, description, lyrics, type, url };
 }
 
 function normalizeEmployeePayload(payload) {
@@ -1168,9 +1486,16 @@ function findEmployee(employeeNumber) {
   return employees.find((employee) => employee.employeeNumber === employeeNumber) || null;
 }
 
-function findVote(employeeNumber) {
+function findVote(employeeNumber, contestType = "") {
   const votes = readJson(VOTES_PATH);
-  return votes.find((vote) => vote.employeeNumber === employeeNumber) || null;
+  const normalizedContestType = contestType ? normalizeContestType(contestType) : "";
+  return votes.find((vote) => {
+    if (vote.employeeNumber !== employeeNumber) {
+      return false;
+    }
+
+    return normalizedContestType ? vote.contestType === normalizedContestType : true;
+  }) || null;
 }
 
 function isAuthorizedAdmin(request) {
@@ -1183,26 +1508,28 @@ function readJson(filePath) {
     if (!storageKey) {
       throw new Error(`Unsupported storage path in database mode: ${filePath}`);
     }
-    return cloneJson(databaseState.cache[storageKey]);
+    return normalizeStoragePayload(filePath, cloneJson(databaseState.cache[storageKey]));
   }
 
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return normalizeStoragePayload(filePath, JSON.parse(fs.readFileSync(filePath, "utf8")));
 }
 
 function writeJson(filePath, payload) {
+  const normalizedPayload = normalizeStoragePayload(filePath, payload);
+
   if (USE_DATABASE_STORAGE) {
     const storageKey = STORAGE_KEY_BY_PATH.get(filePath);
     if (!storageKey) {
       throw new Error(`Unsupported storage path in database mode: ${filePath}`);
     }
 
-    const nextPayload = cloneJson(payload);
+    const nextPayload = cloneJson(normalizedPayload);
     databaseState.cache[storageKey] = nextPayload;
     persistDatabasePayload(storageKey, nextPayload);
     return;
   }
 
-  const nextContent = JSON.stringify(payload, null, 2);
+  const nextContent = JSON.stringify(normalizedPayload, null, 2);
   const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
 
   if (currentContent === nextContent) {
