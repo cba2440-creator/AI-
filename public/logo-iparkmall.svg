@@ -1,0 +1,28 @@
+<svg width="1017" height="180" viewBox="0 0 1017 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="logoTitle">
+  <title id="logoTitle">IPARK몰</title>
+  <rect width="1017" height="180" fill="white" fill-opacity="0"/>
+
+  <rect x="0" y="0" width="57" height="180" fill="#F4142C"/>
+  <path d="M79 0H145V57C108 57 79 31 79 0Z" fill="#F4142C"/>
+  <path d="M145 78V180H79V168C79 117 104 78 145 78Z" fill="#F4142C"/>
+
+  <text
+    x="194"
+    y="155"
+    fill="#1A1B1D"
+    font-family="Arial Black, Arial, Helvetica, sans-serif"
+    font-size="142"
+    font-weight="900"
+    letter-spacing="-5"
+  >IPARK</text>
+
+  <text
+    x="882"
+    y="150"
+    fill="#1A1B1D"
+    font-family="Malgun Gothic, Apple SD Gothic Neo, Noto Sans KR, sans-serif"
+    font-size="128"
+    font-weight="900"
+    letter-spacing="-10"
+  >몰</text>
+</svg>

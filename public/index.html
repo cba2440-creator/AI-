@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 AI Video Contest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20260424b">
+</head>
+<body class="employee-page">
+  <div id="vote-toast" class="admin-toast" aria-live="polite"></div>
+
+  <div id="description-modal" class="modal" hidden>
+    <div class="modal__backdrop" data-close-modal="true"></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button id="modal-close" class="modal__close" type="button" aria-label="닫기">×</button>
+      <div class="modal__eyebrow">출품작 상세</div>
+      <h2 id="modal-title" class="modal__title"></h2>
+      <p id="modal-submitter" class="modal__submitter"></p>
+      <div id="modal-description" class="modal__description"></div>
+    </div>
+  </div>
+
+  <div class="page-shell">
+    <header class="hero hero--employee">
+      <nav class="topbar">
+        <a class="brandmark-link" href=".">
+          <img class="brandmark" src="CI_블랙.png" alt="IPARK몰 로고">
+        </a>
+      </nav>
+    </header>
+
+    <main class="layout layout--employee">
+      <aside class="sidebar">
+        <section class="intro-block">
+          <div id="contest-badge" class="hero__badge hero__badge--light">2026 AI Video Contest</div>
+          <h1 id="contest-title">2026 AI Video Contest</h1>
+          <div class="hero__text-group">
+            <p id="contest-description" class="hero__text">가장 인상 깊은 출품작에 소중한 한 표를 남겨 주세요.</p>
+            <p class="hero__text hero__text--sub">(콘테스트별 최초 1회 투표 제출 후 변경 불가)</p>
+          </div>
+          <div class="hero__meta hero__meta--light">
+            <div>
+              <span class="meta__label">투표 대상</span>
+              <strong>전 직원</strong>
+            </div>
+            <div>
+              <span class="meta__label">투표 방식</span>
+              <strong>콘테스트별 1인 1표</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--form panel--form-sticky">
+          <div class="panel__heading">
+            <h2>투표 진행</h2>
+          </div>
+
+          <form id="vote-form" class="vote-form">
+            <label>
+              <span>사원번호</span>
+              <input id="employee-number" name="employeeNumber" type="text" autocomplete="off" required>
+            </label>
+
+            <label>
+              <span>비밀번호 (뒤 4자리)</span>
+              <input id="employee-password" name="employeePassword" type="password" inputmode="numeric" maxlength="4" autocomplete="off" required>
+            </label>
+
+            <label>
+              <span>이름</span>
+              <input id="voter-name" name="voterName" type="text" readonly tabindex="-1">
+            </label>
+
+            <label>
+              <span id="vote-select-label">투표 작품 선택</span>
+              <div id="selected-video" class="vote-selects" role="group" aria-label="투표 작품 선택">
+                <select id="selected-video-1" class="vote-select" aria-label="투표 작품"></select>
+              </div>
+            </label>
+
+            <button id="submit-button" type="submit" class="button button--primary">투표 제출</button>
+          </form>
+
+          <div id="vote-status" class="status-card status-card--centered" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <section class="content-rail">
+        <section class="shelf">
+          <div class="shelf__header">
+            <div>
+              <h2 id="contest-list-title">출품 작품</h2>
+            </div>
+          </div>
+          <div id="video-grid" class="video-grid video-grid--shelf"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <template id="video-card-template">
+    <article class="video-card">
+      <div class="video-card__media"></div>
+      <div class="video-card__index-badge"></div>
+      <div class="video-card__body">
+        <div class="video-card__topline"></div>
+        <h3></h3>
+        <p class="video-card__description"></p>
+        <p class="video-card__lyrics" hidden></p>
+        <div class="video-card__footer">
+          <div class="video-card__actions">
+            <button class="button button--ghost button--small video-card__more" type="button">상세</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js?v=20260424b"></script>
+</body>
+</html>
