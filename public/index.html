@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260424b">
+  <link rel="stylesheet" href="/styles.css?v=20260428c">
 </head>
 <body class="employee-page">
   <div id="vote-toast" class="admin-toast" aria-live="polite"></div>
@@ -27,7 +27,7 @@
     <header class="hero hero--employee">
       <nav class="topbar">
         <a class="brandmark-link" href=".">
-          <img class="brandmark" src="CI_블랙.png" alt="IPARK몰 로고">
+          <img class="brandmark" src="/CI_블랙.png" alt="IPARK몰 로고">
         </a>
       </nav>
     </header>
@@ -38,7 +38,7 @@
           <div id="contest-badge" class="hero__badge hero__badge--light">2026 AI Video Contest</div>
           <h1 id="contest-title">2026 AI Video Contest</h1>
           <div class="hero__text-group">
-            <p id="contest-description" class="hero__text">가장 인상 깊은 출품작에 소중한 한 표를 남겨 주세요.</p>
+            <p id="contest-description" class="hero__text">가장 인상 깊은 작품에 소중한 한 표를 남겨 주세요.</p>
             <p class="hero__text hero__text--sub">(최초 1회 투표 제출 후 변경 불가)</p>
           </div>
           <div class="hero__meta hero__meta--light">
@@ -74,12 +74,10 @@
               <input id="voter-name" name="voterName" type="text" readonly tabindex="-1">
             </label>
 
-            <label>
+            <div class="vote-form__field">
               <span id="vote-select-label">투표 작품 선택</span>
-              <div id="selected-video" class="vote-selects" role="group" aria-label="투표 작품 선택">
-                <select id="selected-video-1" class="vote-select" aria-label="투표 작품"></select>
-              </div>
-            </label>
+              <div id="selected-video" class="vote-selects" role="group" aria-label="투표 작품 선택"></div>
+            </div>
 
             <button id="submit-button" type="submit" class="button button--primary">투표 제출</button>
           </form>
@@ -95,6 +93,7 @@
               <h2 id="contest-list-title">출품 작품</h2>
             </div>
           </div>
+          <div id="music-category-nav" class="music-category-nav" hidden></div>
           <div id="video-grid" class="video-grid video-grid--shelf"></div>
         </section>
       </section>
@@ -118,6 +117,6 @@
     </article>
   </template>
 
-  <script src="app.js?v=20260424b"></script>
+  <script src="/app.js?v=20260428c"></script>
 </body>
 </html>

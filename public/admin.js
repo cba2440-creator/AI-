@@ -1,9 +1,10 @@
 const REMOTE_API_ORIGIN = "https://ai-peulraespom.onrender.com";
-const API_ORIGIN = window.location.hostname === "aiiparkmall.com"
-  || window.location.hostname === "www.aiiparkmall.com"
-  || window.location.hostname === "aiiparkmall.pages.dev"
-  ? REMOTE_API_ORIGIN
-  : "";
+const API_ORIGIN =
+  window.location.hostname === "aiiparkmall.com" ||
+  window.location.hostname === "www.aiiparkmall.com" ||
+  window.location.hostname === "aiiparkmall.pages.dev"
+    ? REMOTE_API_ORIGIN
+    : "";
 const API_BASE = `${API_ORIGIN}/api/admin`;
 const ADMIN_SESSION_KEY = "ai-awards-admin-session";
 const ADMIN_MASK_VALUE = "••••••••";
@@ -45,6 +46,8 @@ const videoContestTypeInput = document.querySelector("#video-contest-type");
 const titleInput = document.querySelector("#video-title");
 const submitterInput = document.querySelector("#video-submitter");
 const descriptionInput = document.querySelector("#video-description");
+const categoryWrap = document.querySelector("#video-category-wrap");
+const categoryInput = document.querySelector("#video-category");
 const urlInput = document.querySelector("#video-url");
 const videoFileInput = document.querySelector("#video-file");
 const videoUrlLabel = document.querySelector("#video-url-label");
@@ -58,6 +61,10 @@ const videoBulkFileInput = document.querySelector("#video-bulk-file");
 const downloadEmployeeTemplateButton = document.querySelector("#download-employee-template");
 const employeeBulkForm = document.querySelector("#employee-bulk-form");
 const employeeBulkFileInput = document.querySelector("#employee-bulk-file");
+const musicCategoryPanel = document.querySelector("#music-category-panel");
+const musicCategoryForm = document.querySelector("#music-category-form");
+const musicCategoryInput = document.querySelector("#music-category-input");
+const saveMusicCategoriesButton = document.querySelector("#save-music-categories");
 const adminVideoList = document.querySelector("#admin-video-list");
 const adminResults = document.querySelector("#admin-results");
 const adminVoteLog = document.querySelector("#admin-vote-log");
@@ -73,20 +80,19 @@ const adminListTitle = document.querySelector("#admin-list-title");
 const adminResultTitle = document.querySelector("#admin-result-title");
 const adminVoteLogTitle = document.querySelector("#admin-vote-log-title");
 const contestButtons = Array.from(document.querySelectorAll(".contest-switch__button"));
-const videoBulkPanel = downloadVideoTemplateButton?.closest(".panel") || null;
-const authPanel = authForm?.closest(".panel") || null;
-const employeeBulkPanel = employeeBulkForm?.closest(".panel") || null;
+const videoBulkPanel = document.querySelector("#video-bulk-panel");
 
 let adminPassword = "";
 let isAuthenticated = false;
 let activeContestType = "video";
 let publicContestType = "video";
+let musicCategories = [];
+let lastDashboardPayload = null;
 let pendingPasswordResolver = null;
 let pendingConfirmResolver = null;
 
 setAuthStatus("관리자 비밀번호를 입력해 주세요.");
 setAdminUIEnabled(false);
-positionEmployeeBulkPanel();
 applyContestTheme();
 syncContestTypeFormState();
 restoreAdminSession();
@@ -123,13 +129,19 @@ contestButtons.forEach((button) => {
     applyContestTheme();
     syncContestTypeFormState();
 
+    if (lastDashboardPayload) {
+      renderDashboard(lastDashboardPayload);
+    }
+
     if (isAuthenticated) {
       await loadDashboard();
     }
   });
 });
 
-videoContestTypeInput.addEventListener("change", syncContestTypeFormState);
+videoContestTypeInput.addEventListener("change", () => {
+  syncContestTypeFormState();
+});
 
 savePublicContestButton.addEventListener("click", async () => {
   if (!ensurePassword()) {
@@ -148,14 +160,46 @@ savePublicContestButton.addEventListener("click", async () => {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "노출 콘테스트 저장에 실패했습니다.", "warning");
+    setAuthStatus("노출 콘테스트 저장에 실패했습니다.", "warning");
     return;
   }
 
   publicContestType = result.publicContestType || publicContestTypeInput.value || "video";
   publicContestTypeInput.value = publicContestType;
-  setAuthStatus(result.message || "사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
-  showToast(result.message || "사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
+  setAuthStatus("사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
+  showToast("사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
+});
+
+musicCategoryForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!ensurePassword()) {
+    return;
+  }
+
+  const categories = musicCategoryInput.value
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const response = await adminFetch(`${API_BASE}/music-categories`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ categories })
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    setAuthStatus(result.message || "카테고리 저장에 실패했습니다.", "warning");
+    return;
+  }
+
+  musicCategories = Array.isArray(result.categories) ? result.categories : categories;
+  fillMusicCategoryField();
+  setAuthStatus(result.message || "AI Music 카테고리를 저장했습니다.", "success");
+  showToast(result.message || "AI Music 카테고리를 저장했습니다.", "success");
+  await loadDashboard();
 });
 
 videoForm.addEventListener("submit", async (event) => {
@@ -170,17 +214,23 @@ videoForm.addEventListener("submit", async (event) => {
     title: titleInput.value.trim(),
     submitter: submitterInput.value.trim(),
     description: descriptionInput.value.trim(),
+    musicCategory: contestType === "bgm" ? categoryInput.value.trim() : "",
     type: contestType === "bgm" ? "audio" : "youtube",
     url: urlInput.value.trim()
   };
 
   if (!payload.title || !payload.submitter || !payload.description) {
-    setAuthStatus("작품 정보는 모두 입력해 주세요.", "warning");
+    setAuthStatus("작품 정보를 모두 입력해 주세요.", "warning");
     return;
   }
 
   if (contestType === "video" && !payload.url) {
     setAuthStatus("영상 콘테스트는 영상 링크를 입력해 주세요.", "warning");
+    return;
+  }
+
+  if (contestType === "bgm" && !payload.musicCategory) {
+    setAuthStatus("AI Music Contest 카테고리를 선택해 주세요.", "warning");
     return;
   }
 
@@ -192,7 +242,6 @@ videoForm.addEventListener("submit", async (event) => {
   const isEditing = Boolean(videoIdInput.value);
   const endpoint = isEditing ? `${API_BASE}/videos/${encodeURIComponent(videoIdInput.value)}` : `${API_BASE}/videos`;
   const method = isEditing ? "PUT" : "POST";
-
   const response = await adminFetch(endpoint, {
     method,
     headers: {
@@ -203,7 +252,7 @@ videoForm.addEventListener("submit", async (event) => {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "작품 저장에 실패했습니다.", "warning");
+    setAuthStatus("작품 저장에 실패했습니다.", "warning");
     return;
   }
 
@@ -229,8 +278,8 @@ videoForm.addEventListener("submit", async (event) => {
   }
 
   clearVideoForm();
-  setAuthStatus(result.message || "작품을 저장했습니다.", "success");
-  showToast(result.message || "작품을 저장했습니다.", "success");
+  setAuthStatus("작품을 저장했습니다.", "success");
+  showToast("작품을 저장했습니다.", "success");
   await loadDashboard();
 });
 
@@ -279,13 +328,13 @@ videoBulkForm.addEventListener("submit", async (event) => {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "작품 엑셀 등록에 실패했습니다.", "warning");
+    setAuthStatus("작품 엑셀 등록에 실패했습니다.", "warning");
     return;
   }
 
   videoBulkForm.reset();
-  setAuthStatus(result.message || "작품 엑셀 등록이 완료되었습니다.", "success");
-  showToast(result.message || "작품 엑셀 등록이 완료되었습니다.", "success");
+  setAuthStatus("작품 엑셀 등록이 완료되었습니다.", "success");
+  showToast("작품 엑셀 등록이 완료되었습니다.", "success");
   await loadDashboard();
 });
 
@@ -329,13 +378,13 @@ employeeBulkForm.addEventListener("submit", async (event) => {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "직원 명단 등록에 실패했습니다.", "warning");
+    setAuthStatus("직원 명단 등록에 실패했습니다.", "warning");
     return;
   }
 
   employeeBulkForm.reset();
-  setAuthStatus(result.message || "직원 명단 등록이 완료되었습니다.", "success");
-  showToast(result.message || "직원 명단 등록이 완료되었습니다.", "success");
+  setAuthStatus("직원 명단 등록이 완료되었습니다.", "success");
+  showToast("직원 명단 등록이 완료되었습니다.", "success");
   await loadDashboard();
 });
 
@@ -362,7 +411,13 @@ downloadResultsButton.addEventListener("click", async () => {
 
   const response = await adminFetch(`${API_BASE}/export-results?contestType=${encodeURIComponent(activeContestType)}`);
   if (!response.ok) {
-    await handleAuthFailure(response);
+    let message = "결과 다운로드에 실패했습니다.";
+    try {
+      const result = await response.json();
+      message = result.message || message;
+    } catch {}
+    setAuthStatus(message, "warning");
+    showToast(message, "warning");
     return;
   }
 
@@ -417,16 +472,27 @@ async function loadDashboard() {
   }
 
   const payload = await response.json();
+  lastDashboardPayload = payload;
+  renderDashboard(payload);
+}
+
+function renderDashboard(payload) {
   const visibleVideos = payload.videos.filter((video) => (video.contestType || "video") === activeContestType);
   const visibleVotes = payload.votes.filter((vote) => (vote.contestType || "video") === activeContestType);
-  const results = payload.resultsByContestType?.[activeContestType] || { totalSelections: 0, voteCounts: {} };
+  const results = payload.resultsByContestType?.[activeContestType] || { totalSelections: 0, voteCounts: {}, categorySummaries: {} };
   const votingClosed = Boolean(payload.meta?.votingClosedByContestType?.[activeContestType]);
 
   publicContestType = payload.meta?.publicContestType || "video";
   publicContestTypeInput.value = publicContestType;
+  musicCategories = Array.isArray(payload.meta?.musicCategories) ? payload.meta.musicCategories : [];
+
+  if (musicCategoryInput) {
+    musicCategoryInput.value = musicCategories.join("\n");
+  }
 
   isAuthenticated = true;
   setAdminUIEnabled(true);
+  fillMusicCategoryField();
   renderVideoList(visibleVideos);
   renderResults(results, visibleVideos);
   renderVoteLog(visibleVotes, visibleVideos);
@@ -435,27 +501,47 @@ async function loadDashboard() {
   openVotingButton.disabled = !votingClosed;
 }
 
+function fillMusicCategoryField() {
+  if (!categoryInput) {
+    return;
+  }
+
+  const currentValue = categoryInput.value;
+  categoryInput.innerHTML = [
+    '<option value="">카테고리 선택</option>',
+    ...musicCategories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
+  ].join("");
+
+  if (currentValue && musicCategories.includes(currentValue)) {
+    categoryInput.value = currentValue;
+  }
+}
+
 function renderVideoList(videos) {
   if (!videos.length) {
     adminVideoList.innerHTML = '<div class="admin-vote-empty">등록된 작품이 없습니다.</div>';
     return;
   }
 
-  adminVideoList.innerHTML = videos.map((video, index) => `
-    <article class="admin-video-card">
-      <div>
-        <strong>${escapeHtml(formatVideoLabel(video, index))}</strong>
-        <div class="admin-video-card__meta">출품자: ${escapeHtml(video.submitter || "")}</div>
-        <div class="admin-video-card__meta">설명: ${escapeHtml(video.description || "")}</div>
-        ${video.url ? `<div class="admin-video-card__link">${escapeHtml(video.url)}</div>` : ""}
-        <div class="admin-video-card__meta">${escapeHtml(getMediaStatus(video))}</div>
-      </div>
-      <div class="admin-video-card__actions">
-        <button class="button button--ghost" type="button" data-action="edit" data-id="${escapeHtml(video.id)}">수정</button>
-        <button class="button button--ghost" type="button" data-action="delete" data-id="${escapeHtml(video.id)}">삭제</button>
-      </div>
-    </article>
-  `).join("");
+  adminVideoList.innerHTML = videos.map((video, index) => {
+    const categoryText = video.musicCategory ? `<div class="admin-video-card__meta">카테고리: ${escapeHtml(video.musicCategory)}</div>` : "";
+    return `
+      <article class="admin-video-card">
+        <div>
+          <strong>${escapeHtml(formatVideoLabel(video, index))}</strong>
+          ${categoryText}
+          <div class="admin-video-card__meta">출품자: ${escapeHtml(video.submitter || "")}</div>
+          <div class="admin-video-card__meta">설명: ${escapeHtml(video.description || "")}</div>
+          ${video.url ? `<div class="admin-video-card__link">${escapeHtml(video.url)}</div>` : ""}
+          <div class="admin-video-card__meta">${escapeHtml(getMediaStatus(video))}</div>
+        </div>
+        <div class="admin-video-card__actions">
+          <button class="button button--ghost" type="button" data-action="edit" data-id="${escapeHtml(video.id)}">수정</button>
+          <button class="button button--ghost" type="button" data-action="delete" data-id="${escapeHtml(video.id)}">삭제</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 
   adminVideoList.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -472,6 +558,38 @@ function renderVideoList(videos) {
 function renderResults(results, videos) {
   if (!videos.length) {
     adminResults.innerHTML = '<div class="admin-vote-empty">집계할 작품이 없습니다.</div>';
+    return;
+  }
+
+  if (activeContestType === "bgm") {
+    const categories = getRenderableCategories(videos);
+    adminResults.innerHTML = categories.map((category) => {
+      const categoryVideos = videos.filter((video) => video.musicCategory === category);
+      const categoryResult = results.categorySummaries?.[category] || { totalSelections: 0, voteCounts: {} };
+
+      const items = categoryVideos.map((video, index) => {
+        const count = categoryResult.voteCounts?.[video.id] || 0;
+        const percentage = categoryResult.totalSelections > 0 ? Math.round((count / categoryResult.totalSelections) * 100) : 0;
+        return `
+          <div class="result-item">
+            <div class="result-item__header">
+              <div class="result-item__title">${escapeHtml(`${String(index + 1).padStart(2, "0")}. ${stripLeadingNumber(video.title)}`)}</div>
+              <div class="result-item__count">${count}표 · ${percentage}%</div>
+            </div>
+            <div class="result-item__bar">
+              <div class="result-item__fill" style="width: ${percentage}%"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <section class="result-group">
+          <div class="result-group__title">${escapeHtml(category)}</div>
+          ${items || '<div class="admin-vote-empty">이 카테고리의 출품곡이 없습니다.</div>'}
+        </section>
+      `;
+    }).join("");
     return;
   }
 
@@ -499,20 +617,28 @@ function renderVoteLog(votes, videos) {
     return;
   }
 
-  const videoIndexById = new Map(videos.map((video, index) => [video.id, index]));
+  const videosById = new Map(videos.map((video) => [video.id, video]));
   adminVoteLog.innerHTML = votes.map((vote) => {
-    const selectedTitles = normalizeVoteVideoIds(vote)
-      .map((videoId) => {
-        const found = videos.find((video) => video.id === videoId);
-        return found ? formatVideoLabel(found, videoIndexById.get(videoId) ?? 0) : videoId;
-      })
-      .join(", ");
+    const selectionsText = activeContestType === "bgm"
+      ? Object.entries(vote.selectionsByCategory || {})
+        .map(([category, videoId]) => {
+          const video = videosById.get(videoId);
+          const title = video ? stripLeadingNumber(video.title) : videoId;
+          return `${category}: ${title}`;
+        })
+        .join(" / ")
+      : normalizeVoteVideoIds(vote)
+        .map((videoId) => {
+          const video = videosById.get(videoId);
+          return video ? stripLeadingNumber(video.title) : videoId;
+        })
+        .join(", ");
 
     return `
       <div class="admin-vote-item">
         <div class="admin-vote-item__content">
           <strong>${escapeHtml(vote.employeeNumber)} · ${escapeHtml(vote.voterName)}</strong>
-          <div class="admin-vote-item__meta">선택 작품: ${escapeHtml(selectedTitles)}</div>
+          <div class="admin-vote-item__meta">선택 작품: ${escapeHtml(selectionsText)}</div>
           <div class="admin-vote-item__meta">${escapeHtml(new Date(vote.submittedAt).toLocaleString("ko-KR"))}</div>
         </div>
         <button class="button button--ghost" type="button" data-delete-vote="${escapeHtml(vote.employeeNumber)}">해제</button>
@@ -545,6 +671,7 @@ function populateVideoForm(video) {
   titleInput.value = video.title || "";
   submitterInput.value = video.submitter || "";
   descriptionInput.value = video.description || "";
+  categoryInput.value = video.musicCategory || "";
   urlInput.value = video.url || "";
   syncContestTypeFormState();
   setAuthStatus("수정할 작품 정보를 불러왔습니다.");
@@ -566,13 +693,13 @@ async function deleteVideo(id) {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "작품 삭제에 실패했습니다.", "warning");
+    setAuthStatus("작품 삭제에 실패했습니다.", "warning");
     return;
   }
 
   clearVideoForm();
-  setAuthStatus(result.message || "작품을 삭제했습니다.", "success");
-  showToast(result.message || "작품을 삭제했습니다.", "success");
+  setAuthStatus("작품을 삭제했습니다.", "success");
+  showToast("작품을 삭제했습니다.", "success");
   await loadDashboard();
 }
 
@@ -592,12 +719,12 @@ async function deleteVote(employeeNumber) {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "투표 해제에 실패했습니다.", "warning");
+    setAuthStatus("투표 해제에 실패했습니다.", "warning");
     return;
   }
 
-  setAuthStatus(result.message || "투표를 해제했습니다.", "success");
-  showToast(result.message || "투표를 해제했습니다.", "success");
+  setAuthStatus("투표를 해제했습니다.", "success");
+  showToast("투표를 해제했습니다.", "success");
   await loadDashboard();
 }
 
@@ -620,12 +747,12 @@ async function postContestAction(endpoint, successMessage) {
   const result = await response.json();
 
   if (!response.ok) {
-    setAuthStatus(result.message || "상태 변경에 실패했습니다.", "warning");
+    setAuthStatus("상태 변경에 실패했습니다.", "warning");
     return;
   }
 
-  setAuthStatus(result.message || successMessage, "success");
-  showToast(result.message || successMessage, "success");
+  setAuthStatus(successMessage, "success");
+  showToast(successMessage, "success");
   await loadDashboard();
 }
 
@@ -633,6 +760,7 @@ function clearVideoForm() {
   videoForm.reset();
   videoIdInput.value = "";
   videoContestTypeInput.value = activeContestType;
+  categoryInput.value = "";
   videoFileInput.value = "";
   syncContestTypeFormState();
 }
@@ -705,11 +833,15 @@ function setAdminUIEnabled(enabled) {
   Array.from(employeeBulkForm.elements).forEach((element) => {
     element.disabled = !enabled;
   });
+  Array.from(musicCategoryForm?.elements || []).forEach((element) => {
+    element.disabled = !enabled;
+  });
 
   downloadVideoTemplateButton.disabled = !enabled;
   downloadEmployeeTemplateButton.disabled = !enabled;
   publicContestTypeInput.disabled = !enabled;
   savePublicContestButton.disabled = !enabled;
+  saveMusicCategoriesButton.disabled = !enabled;
   resetVotesButton.disabled = !enabled;
   closeVotingButton.disabled = !enabled;
   openVotingButton.disabled = !enabled;
@@ -723,12 +855,16 @@ function syncContestTypeFormState() {
   const formEnabled = Boolean(adminPassword && isAuthenticated);
 
   if (videoBulkPanel) {
-    videoBulkPanel.hidden = isMusicContest;
+    videoBulkPanel.hidden = activeContestType === "bgm";
+  }
+
+  if (musicCategoryPanel) {
+    musicCategoryPanel.hidden = activeContestType !== "bgm";
   }
 
   if (videoFormDescription) {
     videoFormDescription.textContent = isMusicContest
-      ? "음악 제목, 출품자, 설명을 입력하고 음악 파일을 업로드해 주세요."
+      ? "음악 제목, 출품자, 설명, 카테고리를 입력하고 음악 파일을 업로드해 주세요."
       : "영상 제목, 출품자, 설명, 영상 링크를 입력해 주세요.";
   }
 
@@ -746,11 +882,26 @@ function syncContestTypeFormState() {
       : "영상 콘테스트는 기존처럼 링크 기반으로 운영합니다. 엑셀 등록 시 contestType 열에 video 또는 bgm 값을 넣어 주세요.";
   }
 
+  if (categoryWrap) {
+    categoryWrap.hidden = !isMusicContest;
+  }
+
   urlInput.required = !isMusicContest;
   urlInput.placeholder = isMusicContest ? "선택 사항" : "https://...";
   urlInput.disabled = !formEnabled ? true : false;
+  categoryInput.disabled = !formEnabled || !isMusicContest;
   videoFileInput.accept = isMusicContest ? ".mp3,.wav,.m4a,.aac" : "video/mp4";
   videoFileInput.disabled = !formEnabled || !isMusicContest;
+  fillMusicCategoryField();
+}
+
+function getRenderableCategories(videos) {
+  const fromState = musicCategories.filter(Boolean);
+  if (fromState.length) {
+    return fromState;
+  }
+
+  return [...new Set(videos.map((video) => String(video.musicCategory || "").trim()).filter(Boolean))];
 }
 
 function getMediaStatus(video) {
@@ -836,7 +987,11 @@ function stripLeadingNumber(title) {
 }
 
 function formatVideoLabel(video, index) {
-  return `${String(index + 1).padStart(2, "0")}. ${stripLeadingNumber(video.title)}`;
+  const title = stripLeadingNumber(video.title);
+  if (video.musicCategory) {
+    return `${String(index + 1).padStart(2, "0")}. [${video.musicCategory}] ${title}`;
+  }
+  return `${String(index + 1).padStart(2, "0")}. ${title}`;
 }
 
 function restoreAdminSession() {
@@ -886,12 +1041,4 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function positionEmployeeBulkPanel() {
-  if (!authPanel || !employeeBulkPanel || authPanel.parentElement !== employeeBulkPanel.parentElement) {
-    return;
-  }
-
-  authPanel.insertAdjacentElement("afterend", employeeBulkPanel);
 }

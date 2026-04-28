@@ -834,6 +834,114 @@ a {
   opacity: 0.65;
 }
 
+.vote-form__field {
+  display: grid;
+  gap: 10px;
+}
+
+.vote-selects {
+  display: grid;
+  gap: 12px;
+}
+
+.vote-select-row {
+  display: grid;
+  gap: 8px;
+}
+
+.vote-select-row__label {
+  color: #4a5563;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.music-category-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.music-category-nav__button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #cfd8e2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #314050;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.music-category-nav__button.is-active {
+  border-color: #00adef;
+  background: #00adef;
+  color: #ffffff;
+}
+
+.category-shelf {
+  display: grid;
+  gap: 14px;
+}
+
+.category-shelf + .category-shelf {
+  margin-top: 36px;
+  padding-top: 18px;
+}
+
+.category-shelf__title {
+  font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.video-grid--category {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 18px;
+  overflow: visible;
+  padding: 4px 0 0;
+}
+
+.video-grid--category .video-card {
+  min-width: 0;
+}
+
+@media (min-width: 1180px) {
+  .video-grid--category {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+}
+
+@media (min-width: 1420px) {
+  .video-grid--category {
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+  }
+}
+
+@media (min-width: 1680px) {
+  .video-grid--category {
+    grid-template-columns: repeat(5, minmax(220px, 1fr));
+  }
+}
+
+.result-group {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #dbe3ea;
+  border-radius: 18px;
+  background: #f8fbfe;
+}
+
+.result-group__title {
+  font-family: "Instrument Sans", "Noto Sans KR", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
 @media (max-width: 1080px) {
   .layout--employee,
   .admin-page .layout--admin {

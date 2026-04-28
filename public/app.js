@@ -1,9 +1,10 @@
 const REMOTE_API_ORIGIN = "https://ai-peulraespom.onrender.com";
-const API_ORIGIN = window.location.hostname === "aiiparkmall.com"
-  || window.location.hostname === "www.aiiparkmall.com"
-  || window.location.hostname === "aiiparkmall.pages.dev"
-  ? REMOTE_API_ORIGIN
-  : "";
+const API_ORIGIN =
+  window.location.hostname === "aiiparkmall.com" ||
+  window.location.hostname === "www.aiiparkmall.com" ||
+  window.location.hostname === "aiiparkmall.pages.dev"
+    ? REMOTE_API_ORIGIN
+    : "";
 const API_BASE = `${API_ORIGIN}/api`;
 const META_REFRESH_INTERVAL = 15000;
 
@@ -11,18 +12,20 @@ const CONTEST_CONFIG = {
   video: {
     badge: "2026 AI Video Contest",
     title: "2026 AI Video Contest",
-    description: "가장 인상 깊은 출품작에 소중한 한 표를 남겨 주세요.",
+    description: "가장 인상 깊은 작품에 소중한 한 표를 남겨 주세요.",
     listTitle: "출품 작품",
     voteLabel: "투표 작품 선택",
-    optionLabel: "영상"
+    optionLabel: "영상",
+    voteMethod: "1인 1표"
   },
   bgm: {
     badge: "2026 AI Music Contest",
     title: "2026 AI Music Contest",
     description: "투표 부탁드립니다.",
     listTitle: "출품 음악",
-    voteLabel: "투표 음악 선택",
-    optionLabel: ""
+    voteLabel: "카테고리별 투표 선택",
+    optionLabel: "",
+    voteMethod: "카테고리별 1표"
   }
 };
 
@@ -30,7 +33,7 @@ const form = document.querySelector("#vote-form");
 const employeeNumberInput = document.querySelector("#employee-number");
 const employeePasswordInput = document.querySelector("#employee-password");
 const nameInput = document.querySelector("#voter-name");
-const voteSelects = Array.from(document.querySelectorAll(".vote-select"));
+const voteSelectContainer = document.querySelector("#selected-video");
 const submitButton = document.querySelector("#submit-button");
 const voteStatus = document.querySelector("#vote-status");
 const voteToast = document.querySelector("#vote-toast");
@@ -46,11 +49,15 @@ const contestTitle = document.querySelector("#contest-title");
 const contestDescription = document.querySelector("#contest-description");
 const contestListTitle = document.querySelector("#contest-list-title");
 const voteSelectLabel = document.querySelector("#vote-select-label");
+const voteMethodText = document.querySelectorAll(".hero__meta strong")[1] || null;
+const musicCategoryNav = document.querySelector("#music-category-nav");
 
 const state = {
   videos: [],
   votingClosed: false,
   activeContestType: "video",
+  musicCategories: [],
+  selectedMusicCategory: "",
   verifiedVoter: null,
   lastVerifiedKey: "",
   currentlyPlayingId: null,
@@ -73,33 +80,8 @@ form.addEventListener("submit", (event) => {
 
 employeeNumberInput.addEventListener("input", handleCredentialInput);
 employeePasswordInput.addEventListener("input", handleCredentialInput);
-
-[employeeNumberInput, employeePasswordInput, ...voteSelects].forEach((element, index, elements) => {
-  element.addEventListener("keydown", async (event) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-
-    event.preventDefault();
-
-    if (element === employeePasswordInput) {
-      const verified = await verifyVoter();
-      if (!verified) {
-        return;
-      }
-    }
-
-    const nextElement = elements[index + 1];
-    if (nextElement) {
-      nextElement.focus();
-      return;
-    }
-
-    if (!submitButton.disabled) {
-      submitButton.focus();
-    }
-  });
-});
+employeeNumberInput.addEventListener("keydown", handleFieldEnter);
+employeePasswordInput.addEventListener("keydown", handleFieldEnter);
 
 modalCloseButton.addEventListener("click", closeDescriptionModal);
 descriptionModal.addEventListener("click", (event) => {
@@ -134,6 +116,7 @@ async function initialize() {
     state.videos = await videosResponse.json();
     const meta = await metaResponse.json();
     state.activeContestType = meta.publicContestType || state.activeContestType;
+    state.musicCategories = Array.isArray(meta.musicCategories) ? meta.musicCategories : [];
 
     await refreshMetaState();
     applyContestTheme();
@@ -155,14 +138,40 @@ function getVisibleVideos() {
   return state.videos.filter((video) => (video.contestType || "video") === state.activeContestType);
 }
 
+function getMusicCategories() {
+  const categories = state.musicCategories.filter(Boolean);
+  if (categories.length) {
+    return categories;
+  }
+
+  return [...new Set(
+    getVisibleVideos()
+      .map((video) => String(video.musicCategory || "").trim())
+      .filter(Boolean)
+  )];
+}
+
+function ensureSelectedMusicCategory() {
+  const categories = getMusicCategories();
+  if (!categories.length) {
+    state.selectedMusicCategory = "";
+    return;
+  }
+
+  if (!categories.includes(state.selectedMusicCategory)) {
+    state.selectedMusicCategory = categories[0];
+  }
+}
+
 function getCurrentVoteState() {
   if (!state.verifiedVoter) {
-    return { hasVoted: false, videoIds: [], submittedAt: null };
+    return { hasVoted: false, videoIds: [], selectionsByCategory: {}, submittedAt: null };
   }
 
   return state.verifiedVoter.votesByContestType?.[state.activeContestType] || {
     hasVoted: false,
     videoIds: [],
+    selectionsByCategory: {},
     submittedAt: null
   };
 }
@@ -174,6 +183,10 @@ function applyContestTheme() {
   contestDescription.textContent = config.description;
   contestListTitle.textContent = config.listTitle;
   voteSelectLabel.textContent = config.voteLabel;
+
+  if (voteMethodText) {
+    voteMethodText.textContent = config.voteMethod;
+  }
 }
 
 function handleCredentialInput() {
@@ -201,6 +214,38 @@ function handleCredentialInput() {
   state.verificationTimer = window.setTimeout(() => {
     verifyVoter();
   }, 250);
+}
+
+async function handleFieldEnter(event) {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (event.currentTarget === employeePasswordInput) {
+    const verified = await verifyVoter();
+    if (!verified) {
+      return;
+    }
+  }
+
+  moveFocusToNextField(event.currentTarget);
+}
+
+function moveFocusToNextField(currentField) {
+  const fields = [employeeNumberInput, employeePasswordInput, ...getVoteSelectElements()];
+  const currentIndex = fields.indexOf(currentField);
+  const nextField = fields[currentIndex + 1];
+
+  if (nextField) {
+    nextField.focus();
+    return;
+  }
+
+  if (!submitButton.disabled) {
+    submitButton.focus();
+  }
 }
 
 async function verifyVoter() {
@@ -255,13 +300,15 @@ async function verifyVoter() {
         [state.activeContestType]: {
           hasVoted: Boolean(result.hasVoted),
           videoIds: Array.isArray(result.videoIds) ? result.videoIds : [],
+          selectionsByCategory: result.selectionsByCategory || {},
           submittedAt: result.submittedAt || null
         }
       }
     };
+
     state.lastVerifiedKey = currentKey;
     nameInput.value = result.voterName;
-    applySelectedVideoIds(getCurrentVoteState().hasVoted ? [] : getCurrentVoteState().videoIds);
+    applySelectedVoteState(getCurrentVoteState());
     renderVideoCards();
     renderStatus();
     updateFormAvailability();
@@ -269,6 +316,7 @@ async function verifyVoter() {
     if (shouldAnnounceVerification) {
       showToast("인증되었습니다.", "success");
     }
+
     return true;
   } catch {
     if (requestId !== state.lookupRequestId) {
@@ -287,7 +335,11 @@ async function verifyVoter() {
 }
 
 async function submitVote() {
-  const preservedSelection = getSelectedVideoIds();
+  const preservedVoteState = getPreparedVoteState();
+  if (!preservedVoteState) {
+    return;
+  }
+
   await refreshMetaState();
 
   if (state.votingClosed) {
@@ -302,9 +354,7 @@ async function submitVote() {
     return;
   }
 
-  if (preservedSelection.length) {
-    applySelectedVideoIds(preservedSelection);
-  }
+  applySelectedVoteState(preservedVoteState);
 
   const currentVoteState = getCurrentVoteState();
   if (currentVoteState.hasVoted) {
@@ -314,9 +364,8 @@ async function submitVote() {
     return;
   }
 
-  const videoIds = getSelectedVideoIds();
-  if (videoIds.length !== 1) {
-    showToast("투표 작품 1개를 선택해 주세요.", "warning");
+  const payload = getPreparedVoteState();
+  if (!payload) {
     return;
   }
 
@@ -330,7 +379,8 @@ async function submitVote() {
         employeeNumber: state.verifiedVoter.employeeNumber,
         password: state.verifiedVoter.password,
         contestType: state.activeContestType,
-        videoIds
+        videoIds: payload.videoIds,
+        selectionsByCategory: payload.selectionsByCategory
       })
     });
     const result = await response.json();
@@ -341,54 +391,148 @@ async function submitVote() {
       }
       renderStatus();
       updateFormAvailability();
-      showToast("투표 제출에 실패했습니다. 다시 시도해 주세요.", "warning");
+      if (response.status === 409) {
+        showToast("이미 투표를 완료했습니다.", "warning");
+      } else if (response.status === 403 && state.votingClosed) {
+        showToast("현재 콘테스트 투표가 마감되었습니다.", "warning");
+      } else {
+        showToast(result.message || "투표 제출에 실패했습니다. 다시 시도해 주세요.", "warning");
+      }
       return;
     }
 
     state.verifiedVoter.votesByContestType[state.activeContestType] = {
       hasVoted: true,
-      videoIds: [],
+      videoIds: payload.videoIds,
+      selectionsByCategory: payload.selectionsByCategory,
       submittedAt: result.submittedAt || new Date().toISOString()
     };
-    applySelectedVideoIds([]);
+
+    applySelectedVoteState(state.verifiedVoter.votesByContestType[state.activeContestType]);
     renderStatus();
     updateFormAvailability();
     showToast("투표가 완료되었습니다.", "success");
   } catch {
-    showToast("서버와 통신 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.", "warning");
+    showToast("서버 통신 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.", "warning");
   }
 }
 
 function renderVoteOptions() {
   const visibleVideos = getVisibleVideos();
-  const config = getContestConfig();
   const currentVoteState = getCurrentVoteState();
-  const preservedSelection = currentVoteState.hasVoted ? currentVoteState.videoIds : getSelectedVideoIds();
-  const options = [
-    { value: "", label: "선택해 주세요" },
-    ...visibleVideos.map((video, index) => ({
-      value: video.id,
-      label: buildVoteOptionLabel(index, stripLeadingNumber(video.title), config.optionLabel)
-    }))
-  ];
+  voteSelectContainer.innerHTML = "";
 
-  voteSelects.forEach((select) => {
-    select.innerHTML = options
-      .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
-      .join("");
-  });
+  if (state.activeContestType === "bgm") {
+    const categories = getMusicCategories();
+    const preservedSelections = currentVoteState.selectionsByCategory || {};
 
-  applySelectedVideoIds(preservedSelection);
+    categories.forEach((category) => {
+      const row = document.createElement("div");
+      row.className = "vote-select-row";
+
+      const label = document.createElement("div");
+      label.className = "vote-select-row__label";
+      label.textContent = category;
+
+      const select = document.createElement("select");
+      select.className = "vote-select";
+      select.dataset.category = category;
+      select.setAttribute("aria-label", `${category} 투표 음악 선택`);
+      select.innerHTML = [
+        `<option value="">${escapeHtml(`${category} 선택`)}</option>`,
+        ...visibleVideos
+          .filter((video) => String(video.musicCategory || "").trim() === category)
+          .map((video, index) => (
+            `<option value="${escapeHtml(video.id)}">${escapeHtml(buildVoteOptionLabel(index, stripLeadingNumber(video.title), ""))}</option>`
+          ))
+      ].join("");
+      select.value = preservedSelections[category] || "";
+      select.addEventListener("keydown", handleDynamicSelectEnter);
+
+      row.append(label, select);
+      voteSelectContainer.appendChild(row);
+    });
+  } else {
+    const select = document.createElement("select");
+    select.id = "selected-video-1";
+    select.className = "vote-select";
+    select.setAttribute("aria-label", "투표 작품");
+    select.innerHTML = [
+      '<option value="">선택해 주세요</option>',
+      ...visibleVideos.map((video, index) => (
+        `<option value="${escapeHtml(video.id)}">${escapeHtml(buildVoteOptionLabel(index, stripLeadingNumber(video.title), getContestConfig().optionLabel))}</option>`
+      ))
+    ].join("");
+    select.value = currentVoteState.videoIds?.[0] || "";
+    select.addEventListener("keydown", handleDynamicSelectEnter);
+    voteSelectContainer.appendChild(select);
+  }
 }
 
-function getSelectedVideoIds() {
-  return [...new Set(voteSelects.map((select) => select.value).filter(Boolean))];
+function handleDynamicSelectEnter(event) {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+  moveFocusToNextField(event.currentTarget);
 }
 
-function applySelectedVideoIds(videoIds) {
-  voteSelects.forEach((select, index) => {
-    select.value = videoIds[index] || "";
-  });
+function getVoteSelectElements() {
+  return Array.from(voteSelectContainer.querySelectorAll(".vote-select"));
+}
+
+function getPreparedVoteState() {
+  if (state.activeContestType === "bgm") {
+    const categories = getMusicCategories();
+    const selectionsByCategory = Object.fromEntries(
+      getVoteSelectElements().map((select) => [select.dataset.category || "", select.value]).filter(([category]) => category)
+    );
+
+    if (!categories.length) {
+      showToast("AI Music 카테고리가 아직 준비되지 않았습니다.", "warning");
+      return null;
+    }
+
+    if (categories.some((category) => !selectionsByCategory[category])) {
+      showToast("모든 카테고리에서 1곡씩 선택해 주세요.", "warning");
+      return null;
+    }
+
+    return {
+      videoIds: categories.map((category) => selectionsByCategory[category]),
+      selectionsByCategory
+    };
+  }
+
+  const selectedId = getVoteSelectElements()[0]?.value || "";
+  if (!selectedId) {
+    showToast("투표 작품 1개를 선택해 주세요.", "warning");
+    return null;
+  }
+
+  return {
+    videoIds: [selectedId],
+    selectionsByCategory: {}
+  };
+}
+
+function applySelectedVoteState(voteState) {
+  const current = voteState || { videoIds: [], selectionsByCategory: {} };
+
+  if (state.activeContestType === "bgm") {
+    const selections = current.selectionsByCategory || {};
+    getVoteSelectElements().forEach((select) => {
+      const category = select.dataset.category || "";
+      select.value = selections[category] || "";
+    });
+    return;
+  }
+
+  const firstSelect = getVoteSelectElements()[0];
+  if (firstSelect) {
+    firstSelect.value = current.videoIds?.[0] || "";
+  }
 }
 
 function renderVideoCards() {
@@ -402,43 +546,112 @@ function renderVideoCards() {
     return;
   }
 
-  visibleVideos.forEach((video, index) => {
-    const card = videoCardTemplate.content.firstElementChild.cloneNode(true);
-    const media = card.querySelector(".video-card__media");
-    const indexBadge = card.querySelector(".video-card__index-badge");
-    const topline = card.querySelector(".video-card__topline");
-    const title = card.querySelector("h3");
-    const description = card.querySelector(".video-card__description");
-    const moreButton = card.querySelector(".video-card__more");
+  if (state.activeContestType === "bgm") {
+    const category = state.selectedMusicCategory;
+    const categoryVideos = visibleVideos.filter((video) => String(video.musicCategory || "").trim() === category);
 
-    card.classList.toggle("is-playing", state.currentlyPlayingId === video.id);
-    card.classList.toggle("is-locked", !hasAccess);
-    media.classList.toggle("video-card__media--audio", video.contestType === "bgm");
-    indexBadge.textContent = String(index + 1);
-    topline.textContent = `${state.activeContestType.toUpperCase()} ENTRY ${String(index + 1).padStart(2, "0")}`;
-    title.textContent = stripLeadingNumber(video.title);
-    description.textContent = summarizeText(video.description || "설명이 아직 등록되지 않았습니다.", 90);
-
-    moreButton.addEventListener("click", () => openDescriptionModal(video));
-    media.appendChild(createMediaElement(video));
-    videoGrid.appendChild(card);
-
-    if (state.pendingAutoplayId === video.id || state.playbackSnapshot.id === video.id) {
-      requestAnimationFrame(() => {
-        const mediaElement = card.querySelector("audio, video");
-        if (!mediaElement) {
-          return;
-        }
-
-        restorePlaybackSnapshot(mediaElement, video.id);
-
-        if ((state.pendingAutoplayId === video.id || state.playbackSnapshot.shouldResume) && typeof mediaElement.play === "function") {
-          mediaElement.play().catch(() => {});
-        }
-      });
-      state.pendingAutoplayId = null;
+    if (!categoryVideos.length) {
+      videoGrid.innerHTML = '<div class="admin-vote-empty">선택한 카테고리의 출품곡이 없습니다.</div>';
+      return;
     }
+
+    const section = document.createElement("section");
+    section.className = "category-shelf";
+
+    const heading = document.createElement("div");
+    heading.className = "category-shelf__title";
+    heading.textContent = category;
+
+    const groupGrid = document.createElement("div");
+    groupGrid.className = "video-grid video-grid--category";
+
+    categoryVideos.forEach((video, index) => {
+      groupGrid.appendChild(buildVideoCard(video, index, hasAccess));
+    });
+
+    section.append(heading, groupGrid);
+    videoGrid.appendChild(section);
+    return;
+  }
+
+  visibleVideos.forEach((video, index) => {
+    videoGrid.appendChild(buildVideoCard(video, index, hasAccess));
   });
+}
+
+function renderMusicCategoryNav() {
+  if (!musicCategoryNav) {
+    return;
+  }
+
+  if (state.activeContestType !== "bgm") {
+    musicCategoryNav.hidden = true;
+    musicCategoryNav.innerHTML = "";
+    return;
+  }
+
+  const categories = getMusicCategories();
+  ensureSelectedMusicCategory();
+  musicCategoryNav.hidden = categories.length === 0;
+
+  musicCategoryNav.innerHTML = categories.map((category) => `
+    <button
+      type="button"
+      class="music-category-nav__button${category === state.selectedMusicCategory ? " is-active" : ""}"
+      data-category="${escapeHtml(category)}"
+    >${escapeHtml(category)}</button>
+  `).join("");
+
+  musicCategoryNav.querySelectorAll("[data-category]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedMusicCategory = button.dataset.category || "";
+      renderMusicCategoryNav();
+      renderVideoCards();
+    });
+  });
+}
+
+function buildVideoCard(video, index, hasAccess) {
+  const card = videoCardTemplate.content.firstElementChild.cloneNode(true);
+  const media = card.querySelector(".video-card__media");
+  const indexBadge = card.querySelector(".video-card__index-badge");
+  const topline = card.querySelector(".video-card__topline");
+  const title = card.querySelector("h3");
+  const description = card.querySelector(".video-card__description");
+  const moreButton = card.querySelector(".video-card__more");
+
+  card.classList.toggle("is-playing", state.currentlyPlayingId === video.id);
+  card.classList.toggle("is-locked", !hasAccess);
+  media.classList.toggle("video-card__media--audio", video.contestType === "bgm");
+  indexBadge.textContent = String(index + 1);
+  topline.textContent =
+    video.contestType === "bgm"
+      ? `ENTRY ${String(index + 1).padStart(2, "0")}`
+      : `${state.activeContestType.toUpperCase()} ENTRY ${String(index + 1).padStart(2, "0")}`;
+
+  title.textContent = stripLeadingNumber(video.title);
+  description.textContent = summarizeText(video.description || "설명이 아직 등록되지 않았습니다.", 90);
+
+  moreButton.addEventListener("click", () => openDescriptionModal(video));
+  media.appendChild(createMediaElement(video));
+
+  if (state.pendingAutoplayId === video.id || state.playbackSnapshot.id === video.id) {
+    requestAnimationFrame(() => {
+      const mediaElement = card.querySelector("audio, video");
+      if (!mediaElement) {
+        return;
+      }
+
+      restorePlaybackSnapshot(mediaElement, video.id);
+
+      if ((state.pendingAutoplayId === video.id || state.playbackSnapshot.shouldResume) && typeof mediaElement.play === "function") {
+        mediaElement.play().catch(() => {});
+      }
+    });
+    state.pendingAutoplayId = null;
+  }
+
+  return card;
 }
 
 function createMediaElement(video) {
@@ -472,7 +685,7 @@ function createMediaElement(video) {
       return player;
     }
 
-    return createLaunchButton(video, "");
+    return createLaunchButton(video, "재생");
   }
 
   const youtubeId = getYoutubeId(video.url);
@@ -489,8 +702,8 @@ function createLaunchButton(video, label) {
   button.className = "video-card__launch";
   if (video.contestType === "bgm") {
     button.classList.add("video-card__launch--audio");
-    button.textContent = label || "재생";
   }
+  button.textContent = label;
   button.setAttribute("aria-label", `${video.title} 재생`);
   button.addEventListener("click", async () => {
     const canAccess = await ensureMediaAccess();
@@ -577,7 +790,17 @@ function openDescriptionModal(video) {
 }
 
 function buildModalDescription(video) {
+  const categorySection = video.contestType === "bgm" && video.musicCategory
+    ? `
+      <section class="modal__section">
+        <h3 class="modal__section-title">카테고리</h3>
+        <div class="modal__section-body">${escapeHtml(video.musicCategory)}</div>
+      </section>
+    `
+    : "";
+
   return `
+    ${categorySection}
     <section class="modal__section">
       <h3 class="modal__section-title">설명</h3>
       <div class="modal__section-body">${escapeHtml(video.description || "설명이 등록되지 않았습니다.").replace(/\n/g, "<br>")}</div>
@@ -619,9 +842,12 @@ async function refreshMetaState() {
     const meta = await response.json();
     const previousContestType = state.activeContestType;
     state.activeContestType = meta.publicContestType || state.activeContestType;
+    state.musicCategories = Array.isArray(meta.musicCategories) ? meta.musicCategories : [];
+    ensureSelectedMusicCategory();
     state.votingClosed = Boolean(meta.votingClosed);
     applyContestTheme();
     renderVoteOptions();
+    renderMusicCategoryNav();
     if (previousContestType !== state.activeContestType) {
       state.currentlyPlayingId = null;
       state.playbackSnapshot = {
@@ -629,6 +855,7 @@ async function refreshMetaState() {
         currentTime: 0,
         shouldResume: false
       };
+      ensureSelectedMusicCategory();
       renderVideoCards();
     }
     renderStatus();
@@ -662,7 +889,7 @@ async function ensureMediaAccess() {
 function updateFormAvailability() {
   const canVote = Boolean(state.verifiedVoter) && !getCurrentVoteState().hasVoted && !state.votingClosed;
 
-  voteSelects.forEach((select) => {
+  getVoteSelectElements().forEach((select) => {
     select.disabled = !canVote;
   });
   submitButton.disabled = !canVote;
