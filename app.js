@@ -19,10 +19,10 @@ const CONTEST_CONFIG = {
   bgm: {
     badge: "2026 AI Music Contest",
     title: "2026 AI Music Contest",
-    description: "가장 마음에 남는 음악에 소중한 한 표를 남겨 주세요.",
+    description: "투표 부탁드립니다.",
     listTitle: "출품 음악",
     voteLabel: "투표 음악 선택",
-    optionLabel: "음악"
+    optionLabel: ""
   }
 };
 
@@ -243,7 +243,7 @@ async function verifyVoter() {
       renderVideoCards();
       renderStatus();
       updateFormAvailability();
-      showToast(result.message || "사원번호 또는 비밀번호를 다시 확인해 주세요.", "warning");
+      showToast("사원번호 또는 비밀번호를 다시 확인해 주세요.", "warning");
       return false;
     }
 
@@ -287,6 +287,7 @@ async function verifyVoter() {
 }
 
 async function submitVote() {
+  const preservedSelection = getSelectedVideoIds();
   await refreshMetaState();
 
   if (state.votingClosed) {
@@ -301,17 +302,21 @@ async function submitVote() {
     return;
   }
 
+  if (preservedSelection.length) {
+    applySelectedVideoIds(preservedSelection);
+  }
+
   const currentVoteState = getCurrentVoteState();
   if (currentVoteState.hasVoted) {
     renderStatus();
     updateFormAvailability();
-    showToast("이 콘테스트는 이미 투표를 완료했습니다.", "warning");
+    showToast("이미 투표를 완료했습니다.", "warning");
     return;
   }
 
   const videoIds = getSelectedVideoIds();
   if (videoIds.length !== 1) {
-    showToast("반드시 작품 1개를 선택해 주세요.", "warning");
+    showToast("투표 작품 1개를 선택해 주세요.", "warning");
     return;
   }
 
@@ -336,7 +341,7 @@ async function submitVote() {
       }
       renderStatus();
       updateFormAvailability();
-      showToast(result.message || "투표 제출에 실패했습니다.", "warning");
+      showToast("투표 제출에 실패했습니다. 다시 시도해 주세요.", "warning");
       return;
     }
 
@@ -348,20 +353,22 @@ async function submitVote() {
     applySelectedVideoIds([]);
     renderStatus();
     updateFormAvailability();
-    showToast(result.message || "투표가 완료되었습니다.", "success");
+    showToast("투표가 완료되었습니다.", "success");
   } catch {
-    showToast("서버와 통신하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.", "warning");
+    showToast("서버와 통신 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.", "warning");
   }
 }
 
 function renderVoteOptions() {
   const visibleVideos = getVisibleVideos();
   const config = getContestConfig();
+  const currentVoteState = getCurrentVoteState();
+  const preservedSelection = currentVoteState.hasVoted ? currentVoteState.videoIds : getSelectedVideoIds();
   const options = [
     { value: "", label: "선택해 주세요" },
     ...visibleVideos.map((video, index) => ({
       value: video.id,
-      label: `${String(index + 1).padStart(2, "0")}. ${config.optionLabel} ${stripLeadingNumber(video.title)}`
+      label: buildVoteOptionLabel(index, stripLeadingNumber(video.title), config.optionLabel)
     }))
   ];
 
@@ -371,7 +378,7 @@ function renderVoteOptions() {
       .join("");
   });
 
-  applySelectedVideoIds(getCurrentVoteState().videoIds);
+  applySelectedVideoIds(preservedSelection);
 }
 
 function getSelectedVideoIds() {
@@ -402,7 +409,6 @@ function renderVideoCards() {
     const topline = card.querySelector(".video-card__topline");
     const title = card.querySelector("h3");
     const description = card.querySelector(".video-card__description");
-    const lyrics = card.querySelector(".video-card__lyrics");
     const moreButton = card.querySelector(".video-card__more");
 
     card.classList.toggle("is-playing", state.currentlyPlayingId === video.id);
@@ -412,14 +418,6 @@ function renderVideoCards() {
     topline.textContent = `${state.activeContestType.toUpperCase()} ENTRY ${String(index + 1).padStart(2, "0")}`;
     title.textContent = stripLeadingNumber(video.title);
     description.textContent = summarizeText(video.description || "설명이 아직 등록되지 않았습니다.", 90);
-
-    if (state.activeContestType === "bgm" && video.lyrics) {
-      lyrics.hidden = false;
-      lyrics.textContent = summarizeText(video.lyrics, 120);
-    } else {
-      lyrics.hidden = true;
-      lyrics.textContent = "";
-    }
 
     moreButton.addEventListener("click", () => openDescriptionModal(video));
     media.appendChild(createMediaElement(video));
@@ -579,28 +577,12 @@ function openDescriptionModal(video) {
 }
 
 function buildModalDescription(video) {
-  const sections = [
-    {
-      label: "설명",
-      value: video.description || "설명이 등록되지 않았습니다."
-    }
-  ];
-
-  if (video.contestType === "bgm") {
-    sections.push({
-      label: "가사",
-      value: video.lyrics || "가사가 등록되지 않았습니다."
-    });
-  }
-
-  return sections
-    .map((section) => `
-      <section class="modal__section">
-        <h3 class="modal__section-title">${escapeHtml(section.label)}</h3>
-        <div class="modal__section-body">${escapeHtml(section.value).replace(/\n/g, "<br>")}</div>
-      </section>
-    `)
-    .join("");
+  return `
+    <section class="modal__section">
+      <h3 class="modal__section-title">설명</h3>
+      <div class="modal__section-body">${escapeHtml(video.description || "설명이 등록되지 않았습니다.").replace(/\n/g, "<br>")}</div>
+    </section>
+  `;
 }
 
 function closeDescriptionModal() {
@@ -619,7 +601,7 @@ function renderStatus() {
   }
 
   if (currentVoteState.hasVoted) {
-    voteStatus.textContent = "이 콘테스트는 이미 투표를 완료했습니다.";
+    voteStatus.textContent = "이미 투표를 완료했습니다.";
     voteStatus.classList.add("is-success");
     return;
   }
@@ -721,6 +703,12 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function buildVoteOptionLabel(index, title, optionLabel) {
+  const numberLabel = `${String(index + 1).padStart(2, "0")}.`;
+  const typeLabel = String(optionLabel || "").trim();
+  return typeLabel ? `${numberLabel} ${typeLabel} ${title}` : `${numberLabel} ${title}`;
 }
 
 function capturePlaybackSnapshot() {

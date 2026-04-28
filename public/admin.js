@@ -45,8 +45,6 @@ const videoContestTypeInput = document.querySelector("#video-contest-type");
 const titleInput = document.querySelector("#video-title");
 const submitterInput = document.querySelector("#video-submitter");
 const descriptionInput = document.querySelector("#video-description");
-const lyricsField = document.querySelector("#lyrics-field");
-const lyricsInput = document.querySelector("#video-lyrics");
 const urlInput = document.querySelector("#video-url");
 const videoFileInput = document.querySelector("#video-file");
 const videoUrlLabel = document.querySelector("#video-url-label");
@@ -54,7 +52,6 @@ const videoFileLabel = document.querySelector("#video-file-label");
 const videoFormDescription = document.querySelector("#video-form-description");
 const videoFormHint = document.querySelector("#video-form-hint");
 const videoFormResetButton = document.querySelector("#video-form-reset");
-const videoBulkPanel = document.querySelector("#video-bulk-panel");
 const downloadVideoTemplateButton = document.querySelector("#download-video-template");
 const videoBulkForm = document.querySelector("#video-bulk-form");
 const videoBulkFileInput = document.querySelector("#video-bulk-file");
@@ -76,6 +73,9 @@ const adminListTitle = document.querySelector("#admin-list-title");
 const adminResultTitle = document.querySelector("#admin-result-title");
 const adminVoteLogTitle = document.querySelector("#admin-vote-log-title");
 const contestButtons = Array.from(document.querySelectorAll(".contest-switch__button"));
+const videoBulkPanel = downloadVideoTemplateButton?.closest(".panel") || null;
+const authPanel = authForm?.closest(".panel") || null;
+const employeeBulkPanel = employeeBulkForm?.closest(".panel") || null;
 
 let adminPassword = "";
 let isAuthenticated = false;
@@ -86,6 +86,7 @@ let pendingConfirmResolver = null;
 
 setAuthStatus("관리자 비밀번호를 입력해 주세요.");
 setAdminUIEnabled(false);
+positionEmployeeBulkPanel();
 applyContestTheme();
 syncContestTypeFormState();
 restoreAdminSession();
@@ -169,7 +170,6 @@ videoForm.addEventListener("submit", async (event) => {
     title: titleInput.value.trim(),
     submitter: submitterInput.value.trim(),
     description: descriptionInput.value.trim(),
-    lyrics: lyricsInput.value.trim(),
     type: contestType === "bgm" ? "audio" : "youtube",
     url: urlInput.value.trim()
   };
@@ -447,7 +447,6 @@ function renderVideoList(videos) {
         <strong>${escapeHtml(formatVideoLabel(video, index))}</strong>
         <div class="admin-video-card__meta">출품자: ${escapeHtml(video.submitter || "")}</div>
         <div class="admin-video-card__meta">설명: ${escapeHtml(video.description || "")}</div>
-        ${video.contestType === "bgm" ? `<div class="admin-video-card__meta">가사: ${escapeHtml(video.lyrics || "미입력")}</div>` : ""}
         ${video.url ? `<div class="admin-video-card__link">${escapeHtml(video.url)}</div>` : ""}
         <div class="admin-video-card__meta">${escapeHtml(getMediaStatus(video))}</div>
       </div>
@@ -546,7 +545,6 @@ function populateVideoForm(video) {
   titleInput.value = video.title || "";
   submitterInput.value = video.submitter || "";
   descriptionInput.value = video.description || "";
-  lyricsInput.value = video.lyrics || "";
   urlInput.value = video.url || "";
   syncContestTypeFormState();
   setAuthStatus("수정할 작품 정보를 불러왔습니다.");
@@ -635,7 +633,6 @@ function clearVideoForm() {
   videoForm.reset();
   videoIdInput.value = "";
   videoContestTypeInput.value = activeContestType;
-  lyricsInput.value = "";
   videoFileInput.value = "";
   syncContestTypeFormState();
 }
@@ -729,13 +726,9 @@ function syncContestTypeFormState() {
     videoBulkPanel.hidden = isMusicContest;
   }
 
-  if (lyricsField) {
-    lyricsField.hidden = !isMusicContest;
-  }
-
   if (videoFormDescription) {
     videoFormDescription.textContent = isMusicContest
-      ? "음악 제목, 출품자, 설명, 가사를 입력하고 음악 파일을 업로드해 주세요."
+      ? "음악 제목, 출품자, 설명을 입력하고 음악 파일을 업로드해 주세요."
       : "영상 제목, 출품자, 설명, 영상 링크를 입력해 주세요.";
   }
 
@@ -753,7 +746,6 @@ function syncContestTypeFormState() {
       : "영상 콘테스트는 기존처럼 링크 기반으로 운영합니다. 엑셀 등록 시 contestType 열에 video 또는 bgm 값을 넣어 주세요.";
   }
 
-  lyricsInput.disabled = !formEnabled || !isMusicContest;
   urlInput.required = !isMusicContest;
   urlInput.placeholder = isMusicContest ? "선택 사항" : "https://...";
   urlInput.disabled = !formEnabled ? true : false;
@@ -894,4 +886,12 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function positionEmployeeBulkPanel() {
+  if (!authPanel || !employeeBulkPanel || authPanel.parentElement !== employeeBulkPanel.parentElement) {
+    return;
+  }
+
+  authPanel.insertAdjacentElement("afterend", employeeBulkPanel);
 }
