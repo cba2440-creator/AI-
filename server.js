@@ -13,9 +13,10 @@ const DEFAULT_RENDER_DATA_DIR = "/var/data/ai-promotion-awards";
 const DEFAULT_LOCAL_DATA_DIR = path.join(ROOT, "data");
 const DATABASE_URL = String(process.env.DATABASE_URL || "").trim();
 const USE_DATABASE_STORAGE = Boolean(DATABASE_URL);
+const IS_RENDER_RUNTIME = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL);
 const REQUIRE_PERSISTENT_DATA =
   String(
-    process.env.REQUIRE_PERSISTENT_DATA ?? "false"
+    process.env.REQUIRE_PERSISTENT_DATA ?? (IS_RENDER_RUNTIME ? "true" : "false")
   ).toLowerCase() === "true";
 const CONFIGURED_DATA_DIR =
   USE_DATABASE_STORAGE
@@ -23,7 +24,7 @@ const CONFIGURED_DATA_DIR =
     : (
       process.env.DATA_DIR ||
       process.env.RENDER_DISK_MOUNT_PATH ||
-      (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR)
+      (IS_RENDER_RUNTIME ? DEFAULT_RENDER_DATA_DIR : DEFAULT_LOCAL_DATA_DIR)
     );
 const REQUESTED_DATA_DIR = path.isAbsolute(CONFIGURED_DATA_DIR)
   ? CONFIGURED_DATA_DIR
@@ -537,7 +538,16 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (pathname === "/healthz" && request.method === "GET") {
-    return sendJson(response, 200, { ok: true });
+    return sendJson(response, 200, {
+      ok: true,
+      requestedDataDir: REQUESTED_DATA_DIR,
+      dataDir: DATA_DIR,
+      usingFallbackDataDir: USING_FALLBACK_DATA_DIR,
+      usingRenderDiskPath: DATA_DIR === DEFAULT_RENDER_DATA_DIR,
+      persistentReady: USE_DATABASE_STORAGE || !REQUIRE_PERSISTENT_DATA || !USING_FALLBACK_DATA_DIR,
+      requirePersistentData: REQUIRE_PERSISTENT_DATA,
+      isRenderRuntime: IS_RENDER_RUNTIME
+    });
   }
 
   if (pathname.startsWith("/media/") && request.method === "GET") {
