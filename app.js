@@ -1,4 +1,10 @@
-const API_BASE = "/api";
+const REMOTE_API_ORIGIN = "https://ai-peulraespom.onrender.com";
+const API_ORIGIN = window.location.hostname === "aiiparkmall.com"
+  || window.location.hostname === "www.aiiparkmall.com"
+  || window.location.hostname === "aiiparkmall.pages.dev"
+  ? REMOTE_API_ORIGIN
+  : "";
+const API_BASE = `${API_ORIGIN}/api`;
 const META_REFRESH_INTERVAL = 15000;
 
 const CONTEST_CONFIG = {
@@ -436,7 +442,7 @@ function createMediaElement(video) {
 
     if (state.currentlyPlayingId === video.id) {
       const audio = document.createElement("audio");
-      audio.src = video.localVideoUrl;
+      audio.src = resolveMediaUrl(video.localVideoUrl);
       audio.controls = true;
       audio.preload = "metadata";
       return audio;
@@ -448,7 +454,7 @@ function createMediaElement(video) {
   if (video.localVideoUrl) {
     if (state.currentlyPlayingId === video.id) {
       const player = document.createElement("video");
-      player.src = video.localVideoUrl;
+      player.src = resolveMediaUrl(video.localVideoUrl);
       player.controls = true;
       player.preload = "metadata";
       player.playsInline = true;
@@ -537,6 +543,19 @@ function getYoutubeId(url) {
 function summarizeText(text, limit) {
   const normalized = String(text || "").trim();
   return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+}
+
+function resolveMediaUrl(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    return rawValue;
+  }
+
+  return API_ORIGIN ? `${API_ORIGIN}${rawValue}` : rawValue;
 }
 
 function openDescriptionModal(video) {

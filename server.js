@@ -7,7 +7,7 @@ const XLSX = require("xlsx");
 const Busboy = require("busboy");
 
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall2020!";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "iparkmall1234";
 const ROOT = __dirname;
 const DEFAULT_RENDER_DATA_DIR = "/var/data/ai-promotion-awards";
 const DEFAULT_LOCAL_DATA_DIR = path.join(ROOT, "data");
@@ -15,8 +15,7 @@ const DATABASE_URL = String(process.env.DATABASE_URL || "").trim();
 const USE_DATABASE_STORAGE = Boolean(DATABASE_URL);
 const REQUIRE_PERSISTENT_DATA =
   String(
-    process.env.REQUIRE_PERSISTENT_DATA ??
-      (process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? "true" : "false")
+    process.env.REQUIRE_PERSISTENT_DATA ?? "false"
   ).toLowerCase() === "true";
 const CONFIGURED_DATA_DIR =
   USE_DATABASE_STORAGE
@@ -59,6 +58,14 @@ const databaseState = {
     employees: null
   }
 };
+
+const ALLOWED_CORS_ORIGINS = new Set([
+  "https://aiiparkmall.com",
+  "https://www.aiiparkmall.com",
+  "https://aiiparkmall.pages.dev",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+]);
 
 const MIME_TYPES = {
   ".aac": "audio/aac",
@@ -224,6 +231,16 @@ initializeStorage();
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
   const pathname = decodeURIComponent(requestUrl.pathname);
+
+  if (pathname.startsWith("/api/") || pathname.startsWith("/media/")) {
+    applyCorsHeaders(request, response);
+  }
+
+  if (request.method === "OPTIONS" && pathname.startsWith("/api/")) {
+    response.writeHead(204);
+    response.end();
+    return;
+  }
 
   if (pathname === "/api/videos" && request.method === "GET") {
     return sendJson(response, 200, readJson(VIDEOS_PATH));
@@ -1548,6 +1565,17 @@ function sendJson(response, statusCode, payload) {
     "Content-Type": "application/json; charset=utf-8"
   });
   response.end(JSON.stringify(payload));
+}
+
+function applyCorsHeaders(request, response) {
+  const origin = String(request.headers.origin || "").trim();
+  if (ALLOWED_CORS_ORIGINS.has(origin)) {
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Vary", "Origin");
+  }
+
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, x-admin-password");
 }
 
 function readRequestBody(request) {
