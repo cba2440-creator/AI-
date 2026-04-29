@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import * as XLSX from "../_vendor/xlsx.mjs";
 import {
   CONTEST_TYPES,
   DEFAULT_CONTEST_TYPE,
