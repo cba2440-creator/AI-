@@ -302,6 +302,7 @@ function uploadMediaFiles(bucketName, videos) {
       "object",
       "put",
       `${bucketName}/${video.mediaKey}`,
+      "--remote",
       "--file",
       sourcePath
     ]);
