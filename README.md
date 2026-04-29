@@ -1,32 +1,81 @@
-# AI 홍보 영상 어워드
+# AI Promotion Awards Voting
 
-직원용 화면은 `index.html`, 관리자 화면은 `admin.html`로 구성된 HTML 중심 사이트입니다.
-뒤에서는 `server.js`가 사원번호 검증, 이름 자동 확인, 투표 저장, 관리자 인증을 처리합니다.
+This project now supports Cloudflare Pages + Functions with:
 
-## 로컬 실행
+- `public/` for static assets
+- `functions/` for API routes
+- `D1` for structured data
+- `R2` for uploaded media files
+
+## Local Node Server
 
 ```powershell
 npm install
 npm start
 ```
 
-- 직원용: `http://localhost:3000`
-- 관리자용: `http://localhost:3000/admin`
+- User: `http://localhost:3000`
+- Admin: `http://localhost:3000/admin`
 
-## 영구 배포
+## Cloudflare Setup
 
-이 프로젝트는 `render.yaml` 기준으로 Render에 바로 배포할 수 있게 구성되어 있습니다.
+Required resources:
 
-### 배포 순서
+1. Cloudflare Pages project
+2. D1 database: `aiiparkmall-voting`
+3. R2 bucket: `aiiparkmall-media`
 
-1. GitHub 저장소에 업로드
-2. Render에서 `New +` → `Blueprint`
-3. GitHub 저장소 연결
-4. Render 배포 완료 후 URL 사용
+Required bindings:
 
-## 데이터 파일
+- `DB` -> D1 database
+- `MEDIA_BUCKET` -> R2 bucket
+- `ADMIN_PASSWORD` -> environment variable
 
-- `data/videos.json`
-- `data/votes.json`
-- `data/state.json`
-- `data/employees.json`
+## Wrangler
+
+This repo uses [wrangler.toml](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/wrangler.toml).
+
+Useful commands:
+
+```powershell
+npm run cf:dev
+npm run cf:deploy
+npm run cf:d1:apply
+npm run cf:import:data
+```
+
+## D1 Migration
+
+Initial schema file:
+
+- [migrations/0001_init.sql](</c:/Users/IPARK/Desktop/업무/AI Project (김선빈)/07. AI 홍보 영상 투표 사이트/migrations/0001_init.sql>)
+
+Run:
+
+```powershell
+npm install
+npx wrangler login
+npm run cf:d1:apply
+```
+
+## Existing Data Import
+
+If local data already exists in [data](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data), import it after D1 and R2 bindings are connected:
+
+```powershell
+npm run cf:import:data
+```
+
+This imports:
+
+- [data/state.json](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data/state.json) -> D1 `contest_state`
+- [data/employees.json](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data/employees.json) -> D1 `employees`
+- [data/videos.json](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data/videos.json) -> D1 `videos`
+- [data/votes.json](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data/votes.json) -> D1 `votes`
+- [data/uploads](/c:/Users/IPARK/Desktop/업무/AI%20Project%20(김선빈)/07.%20AI%20홍보%20영상%20투표%20사이트/data/uploads) -> R2 `aiiparkmall-media`
+
+## Notes
+
+- Uploaded media is stored in R2 with keys like `bgm/<filename>` or `video/<filename>`.
+- The import script expects `wrangler` login to already be completed.
+- If a local uploaded file is missing, the script skips that file and continues.

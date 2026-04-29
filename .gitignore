@@ -1,6 +1,12 @@
 node_modules/
 server.log
+server.err.log
+server.out.log
 tunnel.log
 public-url.txt
 process-info.json
+.wrangler/
+deploy-worktree/
+data/backups/
+data/uploads/
 .DS_Store

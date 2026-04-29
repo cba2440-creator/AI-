@@ -6,7 +6,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "tunnel": "node tunnel-runner.js"
+    "tunnel": "node tunnel-runner.js",
+    "migrate:postgres-store": "node scripts/migrate-postgres-store.js",
+    "cf:dev": "wrangler pages dev public",
+    "cf:deploy": "wrangler pages deploy public",
+    "cf:d1:apply": "wrangler d1 migrations apply aiiparkmall-voting",
+    "cf:import:data": "node scripts/import-cloudflare-store.js"
   },
   "engines": {
     "node": ">=18"
@@ -16,5 +21,8 @@
     "localtunnel": "^2.0.2",
     "pg": "^8.16.3",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.86.0"
   }
 }

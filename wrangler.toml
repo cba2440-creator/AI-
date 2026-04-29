@@ -1,0 +1,15 @@
+name = "aiiparkmall"
+compatibility_date = "2026-04-29"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aiiparkmall-voting"
+database_id = "65ace98e-92f4-4b2a-8e2c-9e665671cb56"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "aiiparkmall-media"
+
+[vars]
+ADMIN_PASSWORD = "iparkmall1234"

@@ -1,10 +1,4 @@
-const REMOTE_API_ORIGIN = "https://ai-peulraespom.onrender.com";
-const API_ORIGIN =
-  window.location.hostname === "aiiparkmall.com" ||
-  window.location.hostname === "www.aiiparkmall.com" ||
-  window.location.hostname === "aiiparkmall.pages.dev"
-    ? REMOTE_API_ORIGIN
-    : "";
+const API_ORIGIN = "";
 const API_BASE = `${API_ORIGIN}/api/admin`;
 const ADMIN_SESSION_KEY = "ai-awards-admin-session";
 const ADMIN_MASK_VALUE = "••••••••";
