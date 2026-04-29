@@ -170,6 +170,45 @@ function getCurrentVoteState() {
   };
 }
 
+function capturePendingVoteState() {
+  if (!state.verifiedVoter) {
+    return null;
+  }
+
+  const currentVoteState = getCurrentVoteState();
+  if (currentVoteState.hasVoted) {
+    return currentVoteState;
+  }
+
+  if (state.activeContestType === "bgm") {
+    const selectionsByCategory = Object.fromEntries(
+      getVoteSelectElements()
+        .map((select) => [select.dataset.category || "", select.value])
+        .filter(([category]) => category)
+    );
+
+    const hasAnySelection = Object.values(selectionsByCategory).some(Boolean);
+    return hasAnySelection
+      ? {
+          hasVoted: false,
+          videoIds: Object.values(selectionsByCategory).filter(Boolean),
+          selectionsByCategory,
+          submittedAt: null
+        }
+      : currentVoteState;
+  }
+
+  const selectedId = getVoteSelectElements()[0]?.value || "";
+  return selectedId
+    ? {
+        hasVoted: false,
+        videoIds: [selectedId],
+        selectionsByCategory: {},
+        submittedAt: null
+      }
+    : currentVoteState;
+}
+
 function applyContestTheme() {
   const config = getContestConfig();
   contestBadge.textContent = config.badge;
@@ -256,6 +295,7 @@ async function verifyVoter() {
     : "";
   const shouldAnnounceVerification = state.lastVerifiedKey !== currentKey || verifiedKey !== currentKey;
   const requestId = ++state.lookupRequestId;
+  const pendingVoteState = capturePendingVoteState();
 
   try {
     const response = await fetch(`${API_BASE}/eligible-voter`, {
@@ -302,7 +342,8 @@ async function verifyVoter() {
 
     state.lastVerifiedKey = currentKey;
     nameInput.value = result.voterName;
-    applySelectedVoteState(getCurrentVoteState());
+    const serverVoteState = getCurrentVoteState();
+    applySelectedVoteState(serverVoteState.hasVoted ? serverVoteState : (pendingVoteState || serverVoteState));
     renderVideoCards();
     renderStatus();
     updateFormAvailability();
@@ -658,11 +699,7 @@ function createMediaElement(video) {
     }
 
     if (state.currentlyPlayingId === video.id) {
-      const audio = document.createElement("audio");
-      audio.src = resolveMediaUrl(video.localVideoUrl);
-      audio.controls = true;
-      audio.preload = "metadata";
-      return audio;
+      return createAudioPlayer(video);
     }
 
     return createLaunchButton(video, "재생");
@@ -688,6 +725,68 @@ function createMediaElement(video) {
     : "linear-gradient(180deg, rgba(11, 17, 24, 0.36), rgba(11, 17, 24, 0.56))";
 
   return createExternalVideoButton(video, backgroundImage);
+}
+
+function createAudioPlayer(video) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "audio-preview";
+
+  const audio = document.createElement("audio");
+  audio.src = resolveMediaUrl(video.localVideoUrl);
+  audio.controls = true;
+  audio.preload = "metadata";
+
+  const seekPanel = document.createElement("div");
+  seekPanel.className = "audio-preview__seek";
+
+  const seekLabel = document.createElement("div");
+  seekLabel.className = "audio-preview__label";
+  seekLabel.textContent = "구간 클릭 이동";
+
+  const seekRail = document.createElement("button");
+  seekRail.type = "button";
+  seekRail.className = "audio-preview__rail";
+  seekRail.setAttribute("aria-label", `${video.title} 재생 구간 이동`);
+
+  const seekFill = document.createElement("span");
+  seekFill.className = "audio-preview__fill";
+  seekRail.appendChild(seekFill);
+
+  const seekTime = document.createElement("div");
+  seekTime.className = "audio-preview__time";
+  seekTime.textContent = "0:00 / 0:00";
+
+  const updateSeekUI = () => {
+    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const ratio = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+    seekFill.style.width = `${ratio * 100}%`;
+    seekTime.textContent = `${formatMediaTime(currentTime)} / ${formatMediaTime(duration)}`;
+  };
+
+  const seekToPointer = (clientX) => {
+    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (!(duration > 0)) {
+      return;
+    }
+
+    const rect = seekRail.getBoundingClientRect();
+    const offset = Math.min(Math.max(clientX - rect.left, 0), rect.width);
+    audio.currentTime = duration * (offset / rect.width);
+    updateSeekUI();
+  };
+
+  seekRail.addEventListener("click", (event) => {
+    seekToPointer(event.clientX);
+  });
+
+  audio.addEventListener("loadedmetadata", updateSeekUI);
+  audio.addEventListener("timeupdate", updateSeekUI);
+  audio.addEventListener("seeked", updateSeekUI);
+
+  seekPanel.append(seekLabel, seekRail, seekTime);
+  wrapper.append(audio, seekPanel);
+  return wrapper;
 }
 
 function createLaunchButton(video, label) {
@@ -828,6 +927,7 @@ function renderStatus() {
 
 async function refreshMetaState() {
   try {
+    const pendingVoteState = capturePendingVoteState();
     const response = await fetch(`${API_BASE}/meta?contestType=${encodeURIComponent(state.activeContestType)}`);
     if (!response.ok) {
       return;
@@ -841,6 +941,7 @@ async function refreshMetaState() {
     state.votingClosed = Boolean(meta.votingClosed);
     applyContestTheme();
     renderVoteOptions();
+    applySelectedVoteState(pendingVoteState || getCurrentVoteState());
     renderMusicCategoryNav();
     if (previousContestType !== state.activeContestType) {
       state.currentlyPlayingId = null;
@@ -976,4 +1077,11 @@ function restorePlaybackSnapshot(mediaElement, videoId) {
   }
 
   mediaElement.addEventListener("loadedmetadata", applyTime, { once: true });
+}
+
+function formatMediaTime(value) {
+  const seconds = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
