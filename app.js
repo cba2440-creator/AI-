@@ -50,6 +50,7 @@ const state = {
   videos: [],
   votingClosed: false,
   activeContestType: "video",
+  publicContestTitle: "",
   musicCategories: [],
   selectedMusicCategory: "",
   verifiedVoter: null,
@@ -110,6 +111,7 @@ async function initialize() {
     state.videos = await videosResponse.json();
     const meta = await metaResponse.json();
     state.activeContestType = meta.publicContestType || state.activeContestType;
+    state.publicContestTitle = String(meta.publicContestTitle || "").trim();
     state.musicCategories = Array.isArray(meta.musicCategories) ? meta.musicCategories : [];
 
     await refreshMetaState();
@@ -211,8 +213,9 @@ function capturePendingVoteState() {
 
 function applyContestTheme() {
   const config = getContestConfig();
-  contestBadge.textContent = config.badge;
-  contestTitle.textContent = config.title;
+  const publicTitle = state.publicContestTitle || config.title;
+  contestBadge.textContent = state.publicContestTitle || config.badge;
+  contestTitle.textContent = publicTitle;
   contestDescription.textContent = config.description;
   contestListTitle.textContent = config.listTitle;
   voteSelectLabel.textContent = config.voteLabel;
@@ -936,6 +939,7 @@ async function refreshMetaState() {
     const meta = await response.json();
     const previousContestType = state.activeContestType;
     state.activeContestType = meta.publicContestType || state.activeContestType;
+    state.publicContestTitle = String(meta.publicContestTitle || "").trim();
     state.musicCategories = Array.isArray(meta.musicCategories) ? meta.musicCategories : [];
     ensureSelectedMusicCategory();
     state.votingClosed = Boolean(meta.votingClosed);

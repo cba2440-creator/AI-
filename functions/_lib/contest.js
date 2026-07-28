@@ -70,6 +70,7 @@ export function normalizeStatePayload(payload) {
     resetVersion: Number.isFinite(Number(state.resetVersion)) ? Number(state.resetVersion) : 1,
     updatedAt: sanitizeText(state.updatedAt) || new Date().toISOString(),
     publicContestType,
+    publicContestTitle: sanitizeText(state.publicContestTitle),
     musicCategories: normalizeMusicCategories(state.musicCategories),
     votingClosedByContestType,
     votingClosed: votingClosedByContestType[DEFAULT_CONTEST_TYPE]

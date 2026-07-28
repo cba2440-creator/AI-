@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS contest_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   public_contest_type TEXT NOT NULL DEFAULT 'video',
+  public_contest_title TEXT NOT NULL DEFAULT '',
   music_categories_json TEXT NOT NULL DEFAULT '[]',
   voting_closed_video INTEGER NOT NULL DEFAULT 0,
   voting_closed_bgm INTEGER NOT NULL DEFAULT 0,
@@ -11,6 +12,7 @@ CREATE TABLE IF NOT EXISTS contest_state (
 INSERT OR IGNORE INTO contest_state (
   id,
   public_contest_type,
+  public_contest_title,
   music_categories_json,
   voting_closed_video,
   voting_closed_bgm,
@@ -19,6 +21,7 @@ INSERT OR IGNORE INTO contest_state (
 ) VALUES (
   1,
   'video',
+  '',
   '[]',
   0,
   0,

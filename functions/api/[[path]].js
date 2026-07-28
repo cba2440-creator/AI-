@@ -17,6 +17,7 @@ import {
 const ADMIN_ERROR = "Invalid admin password.";
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac"]);
 const VIDEO_EXTENSIONS = new Set([".mp4"]);
+let schemaReadyPromise = null;
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -28,6 +29,8 @@ export async function onRequest(context) {
     if (!env.DB) {
       return jsonResponse({ message: "Missing D1 binding." }, 500);
     }
+
+    await ensureSchema(env);
 
     if (request.method === "GET" && pathname === "videos") {
       return jsonResponse(await loadVideos(env));
@@ -154,6 +157,7 @@ async function handleMeta(env, url) {
   return jsonResponse({
     contestTypes: getContestTypes(),
     publicContestType: state.publicContestType,
+    publicContestTitle: state.publicContestTitle,
     musicCategories: state.musicCategories,
     votingClosed: Boolean(state.votingClosedByContestType[contestType]),
     votingClosedByContestType: state.votingClosedByContestType,
@@ -346,13 +350,15 @@ async function handlePublicContestUpdate(request, env) {
   const nextState = {
     ...currentState,
     publicContestType: normalizeContestType(payload.publicContestType),
+    publicContestTitle: sanitizeText(payload.publicContestTitle),
     updatedAt: new Date().toISOString()
   };
 
   await saveState(env, nextState);
   return jsonResponse({
     message: "Public contest saved.",
-    publicContestType: nextState.publicContestType
+    publicContestType: nextState.publicContestType,
+    publicContestTitle: nextState.publicContestTitle
   });
 }
 
@@ -702,6 +708,7 @@ async function loadState(env, videos = null) {
   const row = await env.DB.prepare("SELECT * FROM contest_state WHERE id = 1").first();
   const normalized = normalizeStatePayload({
     publicContestType: row?.public_contest_type || DEFAULT_CONTEST_TYPE,
+    publicContestTitle: row?.public_contest_title || "",
     musicCategories: safeJsonParse(row?.music_categories_json, []),
     votingClosedByContestType: {
       video: Boolean(row?.voting_closed_video),
@@ -725,11 +732,12 @@ async function saveState(env, state) {
   await env.DB.prepare(
     `
       INSERT INTO contest_state (
-        id, public_contest_type, music_categories_json,
+        id, public_contest_type, public_contest_title, music_categories_json,
         voting_closed_video, voting_closed_bgm, reset_version, updated_at
-      ) VALUES (1, ?, ?, ?, ?, ?, ?)
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         public_contest_type = excluded.public_contest_type,
+        public_contest_title = excluded.public_contest_title,
         music_categories_json = excluded.music_categories_json,
         voting_closed_video = excluded.voting_closed_video,
         voting_closed_bgm = excluded.voting_closed_bgm,
@@ -739,6 +747,7 @@ async function saveState(env, state) {
   )
     .bind(
       normalized.publicContestType,
+      normalized.publicContestTitle,
       JSON.stringify(normalized.musicCategories),
       normalized.votingClosedByContestType.video ? 1 : 0,
       normalized.votingClosedByContestType.bgm ? 1 : 0,
@@ -835,6 +844,25 @@ function mapVoteRow(row, videos = []) {
   vote.selectionsByCategory =
     contestType === "bgm" ? buildSelectionsByCategory(vote, videos) : {};
   return vote;
+}
+
+async function ensureSchema(env) {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = (async () => {
+      try {
+        await env.DB.prepare(
+          "ALTER TABLE contest_state ADD COLUMN public_contest_title TEXT NOT NULL DEFAULT ''"
+        ).run();
+      } catch (error) {
+        const message = sanitizeText(error?.message).toLowerCase();
+        if (!message.includes("duplicate") && !message.includes("exists") && !message.includes("duplicate column")) {
+          throw error;
+        }
+      }
+    })();
+  }
+
+  return schemaReadyPromise;
 }
 
 function buildResults(contestType, videos, votes, employees, state) {

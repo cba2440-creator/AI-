@@ -67,6 +67,7 @@ const closeVotingButton = document.querySelector("#close-voting");
 const openVotingButton = document.querySelector("#open-voting");
 const downloadResultsButton = document.querySelector("#download-results");
 const publicContestTypeInput = document.querySelector("#public-contest-type");
+const publicContestTitleInput = document.querySelector("#public-contest-title");
 const savePublicContestButton = document.querySelector("#save-public-contest");
 const adminContestTitle = document.querySelector("#admin-contest-title");
 const adminContestDescription = document.querySelector("#admin-contest-description");
@@ -80,6 +81,7 @@ let adminPassword = "";
 let isAuthenticated = false;
 let activeContestType = "video";
 let publicContestType = "video";
+let publicContestTitle = "";
 let musicCategories = [];
 let lastDashboardPayload = null;
 let pendingPasswordResolver = null;
@@ -148,7 +150,8 @@ savePublicContestButton.addEventListener("click", async () => {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      publicContestType: publicContestTypeInput.value || "video"
+      publicContestType: publicContestTypeInput.value || "video",
+      publicContestTitle: publicContestTitleInput?.value.trim() || ""
     })
   });
   const result = await response.json();
@@ -159,7 +162,11 @@ savePublicContestButton.addEventListener("click", async () => {
   }
 
   publicContestType = result.publicContestType || publicContestTypeInput.value || "video";
+  publicContestTitle = result.publicContestTitle || publicContestTitleInput?.value.trim() || "";
   publicContestTypeInput.value = publicContestType;
+  if (publicContestTitleInput) {
+    publicContestTitleInput.value = publicContestTitle;
+  }
   setAuthStatus("사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
   showToast("사용자 페이지 노출 콘테스트를 저장했습니다.", "success");
 });
@@ -477,7 +484,11 @@ function renderDashboard(payload) {
   const votingClosed = Boolean(payload.meta?.votingClosedByContestType?.[activeContestType]);
 
   publicContestType = payload.meta?.publicContestType || "video";
+  publicContestTitle = payload.meta?.publicContestTitle || "";
   publicContestTypeInput.value = publicContestType;
+  if (publicContestTitleInput) {
+    publicContestTitleInput.value = publicContestTitle;
+  }
   musicCategories = Array.isArray(payload.meta?.musicCategories) ? payload.meta.musicCategories : [];
 
   if (musicCategoryInput) {
@@ -834,6 +845,9 @@ function setAdminUIEnabled(enabled) {
   downloadVideoTemplateButton.disabled = !enabled;
   downloadEmployeeTemplateButton.disabled = !enabled;
   publicContestTypeInput.disabled = !enabled;
+  if (publicContestTitleInput) {
+    publicContestTitleInput.disabled = !enabled;
+  }
   savePublicContestButton.disabled = !enabled;
   saveMusicCategoriesButton.disabled = !enabled;
   resetVotesButton.disabled = !enabled;
